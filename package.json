@@ -1,10 +1,11 @@
 {
 	"name": "paper",
-	"version": "0.8.1",
+	"version": "0.8.2",
 	"main": "./src/node/index.js",
 	"engines": { "node": ">= 0.4.0" },
 	"dependencies": {
-		"canvas": ">= 0.7.0"
+		"canvas": ">= 0.7.0",
+		"jsdom": ">= 0.6.0"
 	},
 	"description": "The Swiss Army Knife of Vector Graphics Scripting",
 	"contributors": [
@@ -13,5 +14,5 @@
 	],
 	"homepage": "http://paperjs.org",
 	"repository": "git://github.com/paperjs/paper.js",
-	"keywords": ["canvas", "vector", "graphic", "graphics", "bezier", "paper.js"]
+	"keywords": ["vector", "graphic", "graphics", "bezier", "curve", "curves", "canvas", "svg", "paper.js"]
 }

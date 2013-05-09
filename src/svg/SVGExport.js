@@ -17,7 +17,8 @@
 new function() {
 	var formatter = Formatter.instance,
 		namespaces = {
-			href: 'http://www.w3.org/1999/xlink'
+			href: 'http://www.w3.org/1999/xlink',
+			xlink: 'http://www.w3.org/2000/xmlns'
 		};
 
 	function setAttributes(node, attrs) {
@@ -346,26 +347,26 @@ new function() {
 				origin = color.getOrigin().transform(matrix),
 				destination = color.getDestination().transform(matrix),
 				attrs;
-				if (radial) {
-					attrs = {
-						cx: origin.x,
-						cy: origin.y,
-						r: origin.getDistance(destination)
-					};
-					var highlight = color.getHighlight();
-					if (highlight) {
-						highlight = highlight.transform(matrix);
-						attrs.fx = highlight.x;
-						attrs.fy = highlight.y;
-					}
-				} else {
-					attrs = {
-						x1: origin.x,
-						y1: origin.y,
-						x2: destination.x,
-						y2: destination.y
-					};
+			if (radial) {
+				attrs = {
+					cx: origin.x,
+					cy: origin.y,
+					r: origin.getDistance(destination)
+				};
+				var highlight = color.getHighlight();
+				if (highlight) {
+					highlight = highlight.transform(matrix);
+					attrs.fx = highlight.x;
+					attrs.fy = highlight.y;
 				}
+			} else {
+				attrs = {
+					x1: origin.x,
+					y1: origin.y,
+					x2: destination.x,
+					y2: destination.y
+				};
+			}
 			attrs.gradientUnits = 'userSpaceOnUse';
 			gradientNode = createElement(
 					(radial ? 'radial' : 'linear') + 'Gradient', attrs);
@@ -462,10 +463,11 @@ new function() {
 	function exportDefinitions(node) {
 		if (!definitions)
 			return node;
-		// We can only use node nodes as defintion containers. Have the loop
+		// We can only use svg nodes as defintion containers. Have the loop
 		// produce one if it's a single item of another type (when calling
 		// #exportSVG() on an item rather than a whole project)
-		var container = node.nodeName == 'svg' && node,
+		// jsdom in Node.js uses uppercase values for nodeName...
+		var container = node.nodeName.toLowerCase() === 'svg' && node,
 			firstChild = container ? container.firstChild : node;
 		for (var i in definitions.svgs) {
 			if (!container) {
@@ -513,10 +515,19 @@ new function() {
 		 */
 		exportSVG: function() {
 			var node = createElement('svg'),
-				layers = this.layers;
+				layers = this.layers,
+				size = this.view.getSize();
 			for (var i = 0, l = layers.length; i < l; i++)
 				node.appendChild(exportSVG(layers[i]));
-			return exportDefinitions(node);
+			return setAttributes(exportDefinitions(node), {
+				x: 0,
+				y: 0,
+				width: size.width,
+				height: size.height,
+				version: '1.1',
+				xmlns: 'http://www.w3.org/2000/svg',
+				xlink: 'http://www.w3.org/1999/xlink'
+			});
 		}
 	});
 };

@@ -20,22 +20,22 @@ new function() {
 	// index is option, and if passed, causes a lookup in a list.
 
 	function getValue(node, key, allowNull, index) {
-		// node[key].baseVal will even be set if the node did not define the
-		// attribute, so if allowNull is true, we need to also check
-		// node.getAttribute(key) == null
-		var base = (!allowNull || node.getAttribute(key) != null)
-				&& node[key] && node[key].baseVal;
+		var namespace = SVGNamespaces[key];
+		var value = namespace
+				? node.getAttributeNS(namespace, key)
+				: node.getAttribute(key);
 		// Note: String values are unfortunately not stored in base.value, but
 		// in base directly, so we need to check both, also on item lists, using
 		// Base.pick(base.value, base)
-		return base
-				? index !== undefined
-					// Item list? Look up by index:
-					? index < base.numberOfItems
-						? Base.pick((base = base.getItem(index)).value, base)
-						: null
-					: Base.pick(base.value, base)
-				: null;
+		if (index != null && value != null) {
+			var values = value.split(',');
+			value = values[index];
+			if (value == null)
+				value = values[values.length - 1];
+		}
+		if (/^[\d.+-]/.test(value))
+			value = parseFloat(value);
+		return value;
 	}
 
 	function getPoint(node, x, y, allowNull, index) {
@@ -68,7 +68,7 @@ new function() {
 
 	function importGroup(node, type) {
 		var nodes = node.childNodes,
-			clip = type === 'clipPath',
+			clip = type === 'clippath',
 			item = clip ? new CompoundPath() : new Group(),
 			project = item._project,
 			currentStyle = project._currentStyle;
@@ -142,7 +142,7 @@ new function() {
 			if (child.nodeType == 1)
 				stops.push(applyAttributes(new GradientStop(), child));
 		}
-		var isRadial = type === 'radialGradient',
+		var isRadial = type === 'radialgradient',
 			gradient = new Gradient(stops, isRadial),
 			origin, destination, highlight;
 		if (isRadial) {
@@ -160,12 +160,14 @@ new function() {
 		return null;
 	}
 
+	// NOTE: All importers are lowercase, since jsdom is using uppercase
+	// nodeNames still.
 	var importers = {
 		// http://www.w3.org/TR/SVG/struct.html#Groups
 		g: importGroup,
 		// http://www.w3.org/TR/SVG/struct.html#NewDocument
 		svg: importGroup,
-		clipPath: importGroup,
+		clippath: importGroup,
 		// http://www.w3.org/TR/SVG/shapes.html#PolygonElement
 		polygon: importPoly,
 		// http://www.w3.org/TR/SVG/shapes.html#PolylineElement
@@ -173,9 +175,9 @@ new function() {
 		// http://www.w3.org/TR/SVG/paths.html
 		path: importPath,
 		// http://www.w3.org/TR/SVG/pservers.html#LinearGradients
-		linearGradient: importGradient,
+		lineargradient: importGradient,
 		// http://www.w3.org/TR/SVG/pservers.html#RadialGradients
-		radialGradient: importGradient,
+		radialgradient: importGradient,
 
 		// http://www.w3.org/TR/SVG/struct.html#ImageElement
 		image: function (node) {
@@ -271,9 +273,9 @@ new function() {
 
 	function applyTransform(item, value, name, node) {
 		// http://www.w3.org/TR/SVG/types.html#DataTypeTransformList
-		var transforms = node[name].baseVal,
+		var transforms = node[name] && node[name].baseVal,
 			matrix = new Matrix();
-		for (var i = 0, l = transforms.numberOfItems; i < l; i++) {
+		for (var i = 0, l = transforms && transforms.numberOfItems; i < l; i++) {
 			var mx = transforms.getItem(i).matrix;
 			matrix.concatenate(
 				new Matrix(mx.a, mx.b, mx.c, mx.d, mx.e, mx.f));

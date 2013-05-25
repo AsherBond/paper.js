@@ -715,43 +715,17 @@ statics: {
 	// #getIntersections() calls as it is required to create the resulting
 	// CurveLocation objects.
 	getIntersections: function(v1, v2, curve1, curve2, locations) {
-		var bounds1 = this.getBounds(v1),
-			bounds2 = this.getBounds(v2);
-/*#*/ if (options.debug) {
-		new Path.Rectangle({
-			rectangle: bounds1,
-			strokeColor: 'green',
-			strokeWidth: 0.1
-		});
-		new Path.Rectangle({
-			rectangle: bounds2,
-			strokeColor: 'red',
-			strokeWidth: 0.1
-		});
-/*#*/ }
+		var bounds1 = Curve.getBounds(v1),
+			bounds2 = Curve.getBounds(v2);
 		if (bounds1.touches(bounds2)) {
 			// See if both curves are flat enough to be treated as lines, either
 			// because they have no control points at all, or are "flat enough"
 			// If the curve was flat in a previous iteration, we don't need to
 			// recalculate since it does not need further subdivision then.
-			if ((this.isLinear(v1)
-					|| this.isFlatEnough(v1, /*#=*/ Numerical.TOLERANCE))
-				&& (this.isLinear(v2)
-					|| this.isFlatEnough(v2, /*#=*/ Numerical.TOLERANCE))) {
-/*#*/ if (options.debug) {
-				new Path.Line({
-					from: [v1[0], v1[1]],
-					to: [v1[6], v1[7]],
-					strokeColor: 'green',
-					strokeWidth: 0.1
-				});
-				new Path.Line({
-					from: [v2[0], v2[1]],
-					to: [v2[6], v2[7]],
-					strokeColor: 'red',
-					strokeWidth: 0.1
-				});
-/*#*/ }
+			if ((Curve.isLinear(v1)
+					|| Curve.isFlatEnough(v1, /*#=*/ Numerical.TOLERANCE))
+				&& (Curve.isLinear(v2)
+					|| Curve.isFlatEnough(v2, /*#=*/ Numerical.TOLERANCE))) {
 				// See if the parametric equations of the lines interesct.
 				// var point = new Line(v1[0], v1[1], v1[6], v1[7], false)
 				//		.intersect(new Line(v2[0], v2[1], v2[6], v2[7], false));
@@ -776,11 +750,11 @@ statics: {
 				// Subdivide both curves, and see if they intersect.
 				// If one of the curves is flat already, no further subdivion
 				// is required.
-				var v1s = this.subdivide(v1),
-					v2s = this.subdivide(v2);
+				var v1s = Curve.subdivide(v1),
+					v2s = Curve.subdivide(v2);
 				for (var i = 0; i < 2; i++)
 					for (var j = 0; j < 2; j++)
-						this.getIntersections(v1s[i], v2s[j], curve1, curve2,
+						Curve.getIntersections(v1s[i], v2s[j], curve1, curve2,
 								locations);
 			}
 		}

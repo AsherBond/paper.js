@@ -153,15 +153,13 @@ function getCurveIntersections(v1, v2, curve1, curve2, locations,
 		// as lines.
 		var flat1 = Curve.isFlatEnough(part1, /*#=*/ Numerical.TOLERANCE),
 			flat2 = Curve.isFlatEnough(part2, /*#=*/ Numerical.TOLERANCE);
-		if (flat1 && flat2) {
-			getLineLineIntersection(part1, part2, curve1, curve2, locations);
-			break;
-		}
 		if (flat1 || flat2) {
-			// Use curve line intersection method while specifying which
-			// curve to be treated as line
-			getCurveLineIntersections(part1, part2, curve1, curve2, locations,
-					flat1);
+			(flat1 && flat2
+					? getLineLineIntersection
+					// Use curve line intersection method while specifying
+					// which curve to be treated as line
+					: getCurveLineIntersections)(part1, part2,
+							curve1, curve2, locations, flat1);
 			break;
 		}
 	}
@@ -178,10 +176,9 @@ function getCurveIntersections(v1, v2, curve1, curve2, locations,
  * ntersection
  */
 function clipFatLine(v1, v2, range2) {
-	// first curve, P
+	// P = first curve, Q = second curve
 	var p0x = v1[0], p0y = v1[1], p1x = v1[2], p1y = v1[3],
 		p2x = v1[4], p2y = v1[5], p3x = v1[6], p3y = v1[7],
-		// second curve, Q
 		q0x = v2[0], q0y = v2[1], q1x = v2[2], q1y = v2[3],
 		q2x = v2[4], q2y = v2[5], q3x = v2[6], q3y = v2[7],
 		// Calculate the fat-line L for P is the baseline l and two
@@ -234,16 +231,16 @@ function clipFatLine(v1, v2, range2) {
 			dtlx1 = tmp;
 		}
 		// We know that (dtlx2 - dtlx1) is never 0
-		var inv_m =  (dtly2 - dtly1) / (dtlx2 - dtlx1);
+		var inv = (dtly2 - dtly1) / (dtlx2 - dtlx1);
 		if (dmin >= dtly1 && dmin <= dtly2) {
-			var ixdx = dtlx1 + (dmin - dtly1) / inv_m;
+			var ixdx = dtlx1 + (dmin - dtly1) / inv;
 			if (ixdx < tmin)
 				tmin = ixdx;
 			if (ixdx > tmaxdmin)
 				tmaxdmin = ixdx;
 		}
 		if (dmax >= dtly1 && dmax <= dtly2) {
-			var ixdx = dtlx1 + (dmax - dtly1) / inv_m;
+			var ixdx = dtlx1 + (dmax - dtly1) / inv;
 			if (ixdx > tmax)
 				tmax = ixdx;
 			if (ixdx < tmin)
@@ -288,79 +285,71 @@ function clipFatLine(v1, v2, range2) {
  * convex-hull is much easier than a set of arbitrary points.
  */
 function getConvexHull(dq0, dq1, dq2, dq3) {
-	var distq1 = getSignedDistance(0, dq0, 1, dq3, 1 / 3, dq1);
-	var distq2 = getSignedDistance(0, dq0, 1, dq3, 2 / 3, dq2);
-	var hull;
+	var distq1 = getSignedDistance(0, dq0, 1, dq3, 1 / 3, dq1),
+		distq2 = getSignedDistance(0, dq0, 1, dq3, 2 / 3, dq2);
 	// Check if [1/3, dq1] and [2/3, dq2] are on the same side of line
 	// [0,dq0, 1,dq3]
 	if (distq1 * distq2 < 0) {
-		// dq1 and dq2 lie on different sides on [0, q0, 1, q3]
-		// Convexhull is a quadrilateral and line [0, q0, 1, q3] is NOT part of
-		// the convexhull so we are pretty much done here.
-		hull = [
+		// dq1 and dq2 lie on different sides on [0, q0, 1, q3]. The hull is a
+		// quadrilateral and line [0, q0, 1, q3] is NOT part of the hull so we
+		// are pretty much done here.
+		return [
 			[ 0, dq0, 1 / 3, dq1 ],
 			[ 1 / 3, dq1, 1, dq3 ],
 			[ 2 / 3, dq2, 0, dq0 ],
 			[ 1, dq3, 2 / 3, dq2 ]
 		];
+	}
+	// dq1 and dq2 lie on the same sides on [0, q0, 1, q3]. The hull can be
+	// a triangle or a quadrilateral and line [0, q0, 1, q3] is part of the
+	// hull. Check if the hull is a triangle or a quadrilateral.
+	var dqMaxX, dqMaxY, vqa1a2X, vqa1a2Y, vqa1MaxX, vqa1MaxY, vqa1MinX, vqa1MinY;
+	if (Math.abs(distq1) > Math.abs(distq2)) {
+		dqMaxX = 1 / 3;
+		dqMaxY = dq1;
+		// apex is dq3 and the other apex point is dq0 vector
+		// dqapex->dqapex2 or base vector which is already part of the hull.
+		vqa1a2X = 1;
+		vqa1a2Y = dq3 - dq0;
+		// vector dqapex->dqMax
+		vqa1MaxX = 2 / 3;
+		vqa1MaxY = dq3 - dq1;
+		// vector dqapex->dqmin
+		vqa1MinX = 1 / 3;
+		vqa1MinY = dq3 - dq2;
 	} else {
-		// dq1 and dq2 lie on the same sides on [0, q0, 1, q3]. c-hull can be a
-		// triangle or a quadrilateral and line [0, q0, 1, q3] is part of the
-		// c-hull. Check if the hull is a triangle or a quadrilateral
-		var dqmin, dqmax, dqapex1, dqapex2;
-		distq1 = Math.abs(distq1);
-		distq2 = Math.abs(distq2);
-		var vqa1a2x, vqa1a2y, vqa1Maxx, vqa1Maxy, vqa1Minx, vqa1Miny;
-		if (distq1 > distq2) {
-			dqmin = [ 2 / 3, dq2 ];
-			dqmax = [ 1 / 3, dq1 ];
-			// apex is dq3 and the other apex point is dq0 vector
-			// dqapex->dqapex2 or base vector which is already part of c-hull
-			vqa1a2x = 1;
-			vqa1a2y = dq3 - dq0;
-			// vector dqapex->dqmax
-			vqa1Maxx = 2 / 3;
-			vqa1Maxy = dq3 - dq1;
-			// vector dqapex->dqmin
-			vqa1Minx = 1 / 3;
-			vqa1Miny = dq3 - dq2;
-		} else {
-			dqmin = [ 1 / 3, dq1 ];
-			dqmax = [ 2 / 3, dq2 ];
-			// apex is dq0 in this case, and the other apex point is dq3 vector
-			// dqapex->dqapex2 or base vector which is already part of c-hull
-			vqa1a2x = -1;
-			vqa1a2y = dq0 - dq3;
-			// vector dqapex->dqmax
-			vqa1Maxx = -2 / 3;
-			vqa1Maxy = dq0 - dq2;
-			// vector dqapex->dqmin
-			vqa1Minx = -1 / 3;
-			vqa1Miny = dq0 - dq1;
-		}
-		// Compare cross products of these vectors to determine, if
-		// point is in triangles [ dq3, dqMax, dq0 ] or [ dq0, dqMax, dq3 ]
-		var vcrossa1a2_a1Min = vqa1a2x * vqa1Miny - vqa1a2y * vqa1Minx;
-		var vcrossa1Max_a1Min = vqa1Maxx * vqa1Miny - vqa1Maxy * vqa1Minx;
-		if (vcrossa1Max_a1Min * vcrossa1a2_a1Min < 0) {
-			// Point [2/3, dq2] is inside the triangle and c-hull is a triangle
-			hull = [
-				[ 0, dq0, dqmax[0], dqmax[1] ],
-				[ dqmax[0], dqmax[1], 1, dq3 ],
+		dqMaxX = 2 / 3;
+		dqMaxY = dq2;
+		// apex is dq0 in this case, and the other apex point is dq3 vector
+		// dqapex->dqapex2 or base vector which is already part of the hull.
+		vqa1a2X = -1;
+		vqa1a2Y = dq0 - dq3;
+		// vector dqapex->dqMax
+		vqa1MaxX = -2 / 3;
+		vqa1MaxY = dq0 - dq2;
+		// vector dqapex->dqmin
+		vqa1MinX = -1 / 3;
+		vqa1MinY = dq0 - dq1;
+	}
+	// Compare cross products of these vectors to determine, if
+	// point is in triangles [ dq3, dqMax, dq0 ] or [ dq0, dqMax, dq3 ]
+	var a1a2_a1Min = vqa1a2X * vqa1MinY - vqa1a2Y * vqa1MinX,
+		a1Max_a1Min = vqa1MaxX * vqa1MinY - vqa1MaxY * vqa1MinX;
+	return a1a2_a1Min * a1Max_a1Min < 0
+			// Point [2/3, dq2] is inside the triangle, the hull is a triangle.
+			? [
+				[ 0, dq0, dqMaxX, dqMaxY ],
+				[ dqMaxX, dqMaxY, 1, dq3 ],
 				[ 1, dq3, 0, dq0 ]
-			];
-		} else {
+			]
 			// Convexhull is a quadrilateral and we need all lines in the
-			// correct order where line [0, q0, 1, q3] is part of the c-hull
-			hull = [
+			// correct order where line [0, q0, 1, q3] is part of the hull.
+			: [
 				[ 0, dq0, 1 / 3, dq1 ],
 				[ 1 / 3, dq1, 2 / 3, dq2 ],
 				[ 2 / 3, dq2, 1, dq3 ],
 				[ 1, dq3, 0, dq0 ]
 			];
-		}
-	}
-	return hull;
 }
 
 // This is basically an "unrolled" version of #Line.getDistance() with sign
@@ -374,7 +363,7 @@ function getSignedDistance(a1x, a1y, a2x, a2y, bx, by) {
 /**
  * Intersections between curve and line becomes rather simple here mostly
  * because of Numerical class. We can rotate the curve and line so that the line 
- * is on X axis, and solve the implicit equations for X axis and the curve
+ * is on X axis, and solve the implicit equations for X axis and the curve.
  */
 function getCurveLineIntersections(v1, v2, curve1, curve2, locations, flip) {
 	if (flip === undefined)

@@ -53,9 +53,9 @@ function addLocation(locations, curve1, parameter, point, curve2) {
 		locations.push(new CurveLocation(curve1, parameter, point, curve2));
 }
 
-function getCurveIntersections(v1, v2, curve1, curve2, locations, v1t, v2t,
-		recursion) {
-	// NOTE: v1t and v1t are only used for recusion
+function getCurveIntersections(v1, v2, curve1, curve2, locations,
+		range1, range2, recursion) {
+	// NOTE: range1 and range1 are only used for recusion
 	recursion = (recursion || 0) + 1;
 	// Avoid endless recursion.
 	// Perhaps we should fall back to a more expensive method after this, but
@@ -64,27 +64,25 @@ function getCurveIntersections(v1, v2, curve1, curve2, locations, v1t, v2t,
 	// outside its bounds!
 	if (recursion > MAX_RECURSION)
 		return;
-	// cache the original parameter range.
-	v1t = v1t || [ 0, 1 ];
-	v2t = v2t || [ 0, 1 ];
-	var _v1t = v1t.slice();
-	var _v2t = v2t.slice();
+	// Set up the parameter ranges.
+	range1 = range1 || [ 0, 1 ];
+	range2 = range2 || [ 0, 1 ];
 	// Get the clipped parts from the original curve, to avoid cumulative errors
-	var _v1 = Curve.getPart(v1, _v1t[0], _v1t[1]);
-	var _v2 = Curve.getPart(v2, _v2t[0], _v2t[1]);
-	// markCurve(_v1, '#f0f', true);
-	// markCurve(_v2, '#0ff', false);
-	var iteration = 0;
+	var part1 = Curve.getPart(v1, range1[0], range1[1]),
+		part2 = Curve.getPart(v2, range2[0], range2[1]),
+		iteration = 0;
+	// markCurve(part1, '#f0f', true);
+	// markCurve(part2, '#0ff', false);
 	// Loop until both parameter range converge. We have to handle the
 	// degenerate case seperately, where fat-line clipping can become
 	// numerically unstable when one of the curves has converged to a point and
 	// the other hasn't.
 	while (iteration++ < MAX_ITERATION
-			&& (Math.abs(_v1t[1] - _v1t[0]) > /*#=*/ Numerical.TOLERANCE
-			|| Math.abs(_v2t[1] - _v2t[0]) > /*#=*/ Numerical.TOLERANCE)) {
+			&& (Math.abs(range1[1] - range1[0]) > /*#=*/ Numerical.TOLERANCE
+			|| Math.abs(range2[1] - range2[0]) > /*#=*/ Numerical.TOLERANCE)) {
 		// First we clip v2 with v1's fat-line
-		var tmp = _v2t.slice();
-		var intersects1 = clipFatLine(_v1, _v2, tmp),
+		var range,
+			intersects1 = clipFatLine(part1, part2, range = range2.slice()),
 			intersects2 = 0;
 		// Stop if there are no possible intersections
 		if (intersects1 === 0)
@@ -92,22 +90,21 @@ function getCurveIntersections(v1, v2, curve1, curve2, locations, v1t, v2t,
 		if (intersects1 > 0) {
 			// Get the clipped parts from the original v2, to avoid cumulative
 			// errors ...and reuse some objects.
-			_v2t = tmp;
-			_v2 = Curve.getPart(v2, _v2t[0], _v2t[1]);
-			// markCurve(_v2, '#0ff', false);
+			range2 = range;
+			part2 = Curve.getPart(v2, range2[0], range2[1]);
+			// markCurve(part2, '#0ff', false);
 			// Next we clip v1 with nuv2's fat-line
-			tmp = _v1t.slice();
-			intersects2 = clipFatLine(_v2, _v1, tmp);
+			intersects2 = clipFatLine(part2, part1, range = range1.slice());
 			// Stop if there are no possible intersections
 			if (intersects2 === 0)
 				break;
 			if (intersects1 > 0) {
 				// Get the clipped parts from the original v2, to avoid
 				// cumulative errors
-				_v1t = tmp;
-				_v1 = Curve.getPart(v1, _v1t[0], _v1t[1]);
+				range1 = range;
+				part1 = Curve.getPart(v1, range1[0], range1[1]);
 			}
-			// markCurve(_v1, '#f0f', true);
+			// markCurve(part1, '#f0f', true);
 		}
 		// Get the clipped parts from the original v1
 		// Check if there could be multiple intersections
@@ -115,21 +112,21 @@ function getCurveIntersections(v1, v2, curve1, curve2, locations, v1t, v2t,
 			// Subdivide the curve which has converged the least from the
 			// original range [0,1], which would be the curve with the largest
 			// parameter range after clipping
-			if (_v1t[1] - _v1t[0] > _v2t[1] - _v2t[0]) {
-				// subdivide _v1 and recurse
-				var t = (v1t[0] + v1t[1]) / 2;
+			if (range1[1] - range1[0] > range2[1] - range2[0]) {
+				// subdivide v1 and recurse
+				var t = (range1[0] + range1[1]) / 2;
 				getCurveIntersections(v1, v2, curve1, curve2, locations,
-						[ v1t[0], t ], v2t, recursion);
+						[ range1[0], t ], range2, recursion);
 				getCurveIntersections(v1, v2, curve1, curve2, locations,
-						[ t, v1t[1] ], v2t, recursion);
+						[ t, range1[1] ], range2, recursion);
 				break;
 			} else {
-				// subdivide _v2 and recurse
-				var t = (v2t[0] + v2t[1]) / 2;
-				getCurveIntersections(v1, v2, curve1, curve2, locations, v1t,
-						[ v2t[0], t ], recursion);
-				getCurveIntersections(v1, v2, curve1, curve2, locations, v1t,
-						[ t, v2t[1] ], recursion);
+				// subdivide v2 and recurse
+				var t = (range2[0] + range2[1]) / 2;
+				getCurveIntersections(v1, v2, curve1, curve2, locations, range1,
+						[ range2[0], t ], recursion);
+				getCurveIntersections(v1, v2, curve1, curve2, locations, range1,
+						[ t, range2[1] ], recursion);
 				break;
 			}
 		}
@@ -144,34 +141,27 @@ function getCurveIntersections(v1, v2, curve1, curve2, locations, v1t, v2t,
 		// Check if one of the parameter range has converged completely to a
 		// point. Now things could get only worse if we iterate more for the
 		// other curve to converge if it hasn't yet happened so.
-		var v1Converged = (Math.abs(_v1t[1] - _v1t[0]) < /*#=*/ Numerical.EPSILON),
-			v2Converged = (Math.abs(_v2t[1] - _v2t[0]) < /*#=*/ Numerical.EPSILON);
-		if (v1Converged || v2Converged) {
-			addLocation(locations, curve1, null, v1Converged
-					? curve1.getPointAt(_v1t[0], true)
-					: curve2.getPointAt(_v2t[0], true), curve2);
-			break;
-		}
-		if (Math.abs(_v1t[1] - _v1t[0]) <= /*#=*/ Numerical.TOLERANCE
-				&& Math.abs(_v2t[1] - _v2t[0]) <= /*#=*/ Numerical.TOLERANCE) {
-			// Both parameter ranges have converged.
-			addLocation(locations, curve1, _v1t[0],
-					curve1.getPointAt(_v1t[0], true), curve2);
+		var converged1 = Math.abs(range1[1] - range1[0]) < /*#=*/ Numerical.TOLERANCE,
+			converged2 = Math.abs(range2[1] - range2[0]) < /*#=*/ Numerical.TOLERANCE;
+		if (converged1 || converged2) {
+			addLocation(locations, curve1, null, converged1
+					? curve1.getPointAt(range1[0], true)
+					: curve2.getPointAt(range2[0], true), curve2);
 			break;
 		}
 		// see if either or both of the curves are flat enough to be treated
 		// as lines.
-		var curve1Flat = Curve.isFlatEnough(_v1, /*#=*/ Numerical.TOLERANCE),
-			curve2Flat = Curve.isFlatEnough(_v2, /*#=*/ Numerical.TOLERANCE);
-		if (curve1Flat && curve2Flat) {
-			getLineLineIntersection(_v1, _v2, curve1, curve2, locations);
+		var flat1 = Curve.isFlatEnough(part1, /*#=*/ Numerical.TOLERANCE),
+			flat2 = Curve.isFlatEnough(part2, /*#=*/ Numerical.TOLERANCE);
+		if (flat1 && flat2) {
+			getLineLineIntersection(part1, part2, curve1, curve2, locations);
 			break;
 		}
-		if (curve1Flat || curve2Flat) {
+		if (flat1 || flat2) {
 			// Use curve line intersection method while specifying which
 			// curve to be treated as line
-			getCurveLineIntersections(_v1, _v2, curve1, curve2, locations,
-					curve1Flat);
+			getCurveLineIntersections(part1, part2, curve1, curve2, locations,
+					flat1);
 			break;
 		}
 	}
@@ -183,11 +173,11 @@ function getCurveIntersections(v1, v2, curve1, curve2, locations, v1t, v2t,
  * fat-line
  * @param {Array} v2 section of the second curve; we will clip this curve with
  * the fat-line of v1
- * @param {Object} v2t the parameter range of v2
+ * @param {Array} range2 the parameter range of v2
  * @return {Number} 0: no Intersection, 1: one intersection, -1: more than one 
  * ntersection
  */
-function clipFatLine(v1, v2, v2t) {
+function clipFatLine(v1, v2, range2) {
 	// first curve, P
 	var p0x = v1[0], p0y = v1[1], p1x = v1[2], p1y = v1[3],
 		p2x = v1[4], p2y = v1[5], p3x = v1[6], p3y = v1[7],
@@ -212,28 +202,29 @@ function clipFatLine(v1, v2, v2t) {
 		// checking whether the curves intersect with each other or not.
 		mindist = Math.min(dq0, dq1, dq2, dq3),
 		maxdist = Math.max(dq0, dq1, dq2, dq3);
-		// If the fatlines don't overlap, we have no intersections!
+	// If the fatlines don't overlap, we have no intersections!
 	if (dmin > maxdist || dmax < mindist)
 		return 0;
-	var tmp;
+	var Dt = getConvexHull(dq0, dq1, dq2, dq3),
+		tmp;
 	if (dq3 < dq0) {
 		tmp = dmin;
 		dmin = dmax;
 		dmax = tmp;
 	}
-	var Dt = getConvexHull(dq0, dq1, dq2, dq3);
 	// Calculate the convex hull for non-parametric bezier curve D(ti, di(t))
 	// Now we clip the convex hulls for D(ti, di(t)) with dmin and dmax
 	// for the coorresponding t values (tmin, tmax): Portions of curve v2 before
 	// tmin and after tmax can safely be clipped away
-	var tmaxdmin = -Infinity, ixd, ixdx, i, len, inv_m;
-	var tmin = Infinity, tmax = -Infinity, Dtl, dtlx1, dtly1, dtlx2, dtly2;
-	for (i = 0, len = Dt.length; i < len; i++) {
-		Dtl = Dt[i];
-		dtlx1 = Dtl[0];
-		dtly1 = Dtl[1];
-		dtlx2 = Dtl[2];
-		dtly2 = Dtl[3];
+	var tmaxdmin = -Infinity,
+		tmin = Infinity,
+		tmax = -Infinity;
+	for (var i = 0, l = Dt.length; i < l; i++) {
+		var Dtl = Dt[i],
+			dtlx1 = Dtl[0],
+			dtly1 = Dtl[1],
+			dtlx2 = Dtl[2],
+			dtly2 = Dtl[3];
 		if (dtly2 < dtly1) {
 			tmp = dtly2;
 			dtly2 = dtly1;
@@ -242,24 +233,28 @@ function clipFatLine(v1, v2, v2t) {
 			dtlx2 = dtlx1;
 			dtlx1 = tmp;
 		}
-		// we know that (dtlx2 - dtlx1) is never 0
-		inv_m =  (dtly2 - dtly1) / (dtlx2 - dtlx1);
+		// We know that (dtlx2 - dtlx1) is never 0
+		var inv_m =  (dtly2 - dtly1) / (dtlx2 - dtlx1);
 		if (dmin >= dtly1 && dmin <= dtly2) {
-			ixdx = dtlx1 + (dmin - dtly1) / inv_m;
-			if (ixdx < tmin) tmin = ixdx;
-			if (ixdx > tmaxdmin) tmaxdmin = ixdx;
+			var ixdx = dtlx1 + (dmin - dtly1) / inv_m;
+			if (ixdx < tmin)
+				tmin = ixdx;
+			if (ixdx > tmaxdmin)
+				tmaxdmin = ixdx;
 		}
 		if (dmax >= dtly1 && dmax <= dtly2) {
-			ixdx = dtlx1 + (dmax - dtly1) / inv_m;
-			if (ixdx > tmax) tmax = ixdx;
-			if (ixdx < tmin) tmin = 0;
+			var ixdx = dtlx1 + (dmax - dtly1) / inv_m;
+			if (ixdx > tmax)
+				tmax = ixdx;
+			if (ixdx < tmin)
+				tmin = 0;
 		}
 	}
 	// Return the parameter values for v2 for which we can be sure that the
 	// intersection with v1 lies within.
 	if (tmin !== Infinity && tmax !== -Infinity) {
-		var mindmin = Math.min(dmin, dmax);
-		var mindmax = Math.max(dmin, dmax);
+		var mindmin = Math.min(dmin, dmax),
+			mindmax = Math.max(dmin, dmax);
 		if (dq3 > mindmin && dq3 < mindmax)
 			tmax = 1;
 		if (dq0 > mindmin && dq0 < mindmax)
@@ -268,14 +263,14 @@ function clipFatLine(v1, v2, v2t) {
 			tmax = 1;
 		// tmin and tmax are within the range (0, 1). We need to project it to
 		// the original parameter range for v2.
-		var v2tmin = v2t[0];
-		var tdiff = (v2t[1] - v2tmin);
-		v2t[0] = v2tmin + tmin * tdiff;
-		v2t[1] = v2tmin + tmax * tdiff;
+		var v2tmin = range2[0],
+			tdiff = range2[1] - v2tmin;
+		range2[0] = v2tmin + tmin * tdiff;
+		range2[1] = v2tmin + tmax * tdiff;
 		// If the new parameter range fails to converge by atleast 20% of the
 		// original range, possibly we have multiple intersections. We need to
 		// subdivide one of the curves.
-		if ((tdiff - (v2t[1] - v2t[0])) / tdiff >= 0.2)
+		if ((tdiff - (range2[1] - range2[0])) / tdiff >= 0.2)
 			return 1;
 	}
 	// TODO: Try checking with a perpendicular fatline to see if the curves

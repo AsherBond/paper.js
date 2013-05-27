@@ -38,7 +38,7 @@ var TextItem = this.TextItem = Item.extend(/** @lends TextItem# */{
 		// might be a properties object literal for #setPropeties() at the end.
 		var hasProperties = arg && Base.isPlainObject(arg)
 				&& arg.x === undefined && arg.y === undefined;
-		this.base(hasProperties ? null : Point.read(arguments));
+		Item.call(this, hasProperties ? null : Point.read(arguments));
 		this._content = '';
 		this._lines = [];
 		if (hasProperties)
@@ -77,9 +77,9 @@ var TextItem = this.TextItem = Item.extend(/** @lends TextItem# */{
 	 * }
 	 */
 
-	_clone: function(copy) {
+	_clone: function _clone(copy) {
 		copy.setContent(this._content);
-		return this.base(copy);
+		return _clone.base.call(this, copy);
 	},
 
 	getContent: function() {

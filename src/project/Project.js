@@ -47,7 +47,7 @@ var Project = this.Project = PaperScopeItem.extend(/** @lends Project# */{
 	initialize: function(view) {
 		// Activate straight away by passing true to base(), so paper.project is
 		// set, as required by Layer and DoumentView constructors.
-		this.base(true);
+		PaperScopeItem.call(this, true);
 		this.layers = [];
 		this.symbols = [];
 		this._currentStyle = new Style();
@@ -97,8 +97,8 @@ var Project = this.Project = PaperScopeItem.extend(/** @lends Project# */{
 	 * Removes this project from the {@link PaperScope#projects} list, and also
 	 * removes its view, if one was defined.
 	 */
-	remove: function() {
-		if (!this.base())
+	remove: function remove() {
+		if (!remove.base.call(this))
 			return false;
 		if (this.view)
 			this.view.remove();

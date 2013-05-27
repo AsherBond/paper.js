@@ -1023,7 +1023,7 @@ new function() { // Scope for methods that require numerical integration
 					a, b, 16, /*#=*/ Numerical.TOLERANCE);
 		}
 	};
-}, new function() { // Scope for Curve intersection
+}, new function() { // Scope for intersection using bezier fat-line clipping
 	function addLocation(locations, curve1, parameter, point, curve2) {
 		// Avoid duplicates when hitting segments (closed paths too)
 		var first = locations[0],
@@ -1210,20 +1210,19 @@ new function() { // Scope for methods that require numerical integration
 			dq0 = getSignedDistance(p0x, p0y, p3x, p3y, q0x, q0y),
 			dq1 = getSignedDistance(p0x, p0y, p3x, p3y, q1x, q1y),
 			dq2 = getSignedDistance(p0x, p0y, p3x, p3y, q2x, q2y),
-			dq3 = getSignedDistance(p0x, p0y, p3x, p3y, q3x, q3y),
-			// Find the minimum and maximum distances from l, this is useful for
-			// checking whether the curves intersect with each other or not.
-			mindist = Math.min(dq0, dq1, dq2, dq3),
-			maxdist = Math.max(dq0, dq1, dq2, dq3);
+			dq3 = getSignedDistance(p0x, p0y, p3x, p3y, q3x, q3y);
+		// Find the minimum and maximum distances from l, this is useful for
+		// checking whether the curves intersect with each other or not.
 		// If the fatlines don't overlap, we have no intersections!
-		if (dmin > maxdist || dmax < mindist)
+		if (dmin > Math.max(dq0, dq1, dq2, dq3)
+				|| dmax < Math.min(dq0, dq1, dq2, dq3))
 			return 0;
 		var hull = getConvexHull(dq0, dq1, dq2, dq3),
-			tmp;
+			swap;
 		if (dq3 < dq0) {
-			tmp = dmin;
+			swap = dmin;
 			dmin = dmax;
-			dmax = tmp;
+			dmax = swap;
 		}
 		// Calculate the convex hull for non-parametric bezier curve D(ti, di(t))
 		// Now we clip the convex hulls for D(ti, di(t)) with dmin and dmax
@@ -1236,9 +1235,9 @@ new function() { // Scope for methods that require numerical integration
 			var p1 = hull[i],
 				p2 = hull[(i + 1) % l];
 			if (p2[1] < p1[1]) {
-				tmp = p2;
+				swap = p2;
 				p2 = p1;
-				p1 = tmp;
+				p1 = swap;
 			}
 			var	x1 = p1[0],
 				y1 = p1[1],
@@ -1264,11 +1263,11 @@ new function() { // Scope for methods that require numerical integration
 		// Return the parameter values for v2 for which we can be sure that the
 		// intersection with v1 lies within.
 		if (tmin !== Infinity && tmax !== -Infinity) {
-			var mindmin = Math.min(dmin, dmax),
-				mindmax = Math.max(dmin, dmax);
-			if (dq3 > mindmin && dq3 < mindmax)
+			var min = Math.min(dmin, dmax),
+				max = Math.max(dmin, dmax);
+			if (dq3 > min && dq3 < max)
 				tmax = 1;
-			if (dq0 > mindmin && dq0 < mindmax)
+			if (dq0 > min && dq0 < max)
 				tmin = 0;
 			if (tmaxdmin > tmax)
 				tmax = 1;
@@ -1299,28 +1298,27 @@ new function() { // Scope for methods that require numerical integration
 	 * Calculating convex-hull is much easier than a set of arbitrary points.
 	 */
 	function getConvexHull(dq0, dq1, dq2, dq3) {
-		var getSignedDistance = Line.getSignedDistance,
-			distq1 = getSignedDistance(0, dq0, 1, dq3, 1 / 3, dq1),
-			distq2 = getSignedDistance(0, dq0, 1, dq3, 2 / 3, dq2);
-		// Check if [1/3, dq1] and [2/3, dq2] are on the same side of line
-		// [0,dq0, 1,dq3]
-		if (distq1 * distq2 < 0) {
-			// dq1 and dq2 lie on different sides on [0, q0, 1, q3]. The hull is
-			// a quadrilateral and line [0, q0, 1, q3] is NOT part of the hull
-			// so we are pretty much done here.
-			return [
-				[ 2 / 3, dq2 ],
-				[ 0, dq0 ],
-				[ 1 / 3, dq1 ],
-				[ 1, dq3 ]
-			];
+		var p0 = [ 0, dq0 ],
+			p1 = [ 1 / 3, dq1 ],
+			p2 = [ 2 / 3, dq2 ],
+			p3 = [ 1, dq3 ],
+			// Find signed distance of p1 and p2 from line [ p0, p3 ]
+			getSignedDistance = Line.getSignedDistance,
+			dist1 = getSignedDistance(0, dq0, 1, dq3, 1 / 3, dq1),
+			dist2 = getSignedDistance(0, dq0, 1, dq3, 2 / 3, dq2);
+		// Check if p1 and p2 are on the same side of the line [ p0, p3 ]
+		if (dist1 * dist2 < 0) {
+			// p1 and p2 lie on different sides of [ p0, p3 ]. The hull is a
+			// quadrilateral and line [ p0, p3 ] is NOT part of the hull so we
+			// are pretty much done here.
+			return [ p0, p1, p3, p2 ];
 		}
-		// dq1 and dq2 lie on the same sides on [0, q0, 1, q3]. The hull can be
-		// a triangle or a quadrilateral and line [0, q0, 1, q3] is part of the
+		// p1 and p2 lie on the same sides of [ p0, p3 ]. The hull can be
+		// a triangle or a quadrilateral and line [ p0, p3 ] is part of the
 		// hull. Check if the hull is a triangle or a quadrilateral.
-		var dqmax, cross;
-		if (Math.abs(distq1) > Math.abs(distq2)) {
-			dqmax = [ 1 / 3, dq1 ];
+		var pmax, cross;
+		if (Math.abs(dist1) > Math.abs(dist2)) {
+			pmax = p1;
 			// apex is dq3 and the other apex point is dq0 vector
 			// dqapex->dqapex2 or base vector which is already part of the hull.
 			// cross = (vqa1a2X * vqa1MinY - vqa1a2Y * vqa1MinX)
@@ -1328,29 +1326,20 @@ new function() { // Scope for methods that require numerical integration
 			cross = (dq3 - dq2 - (dq3 - dq0) / 3)
 					* (2 * (dq3 - dq2) - dq3 + dq1) / 3;
 		} else {
-			dqmax = [ 2 / 3, dq2 ];
+			pmax = p2;
 			// apex is dq0 in this case, and the other apex point is dq3 vector
 			// dqapex->dqapex2 or base vector which is already part of the hull.
 			cross = (dq1 - dq0 + (dq0 - dq3) / 3)
 					* (-2 * (dq0 - dq1) + dq0 - dq2) / 3;
 		}
-		// Compare cross products of these vectors to determine, if
-		// point is in triangles [ dq3, dqMax, dq0 ] or [ dq0, dqMax, dq3 ]
+		// Compare cross products of these vectors to determine if the point is
+		// in the triangle [ p3, pmax, p0 ], or if it is a quadrilateral.
 		return cross < 0
-				// Point [2/3, dq2] is inside the triangle, hull is a triangle.
-				? [
-					[ 0, dq0 ],
-					dqmax,
-					[ 1, dq3 ]
-				]
+				// p2 is inside the triangle, hull is a triangle.
+				? [ p0, pmax, p3 ]
 				// Convexhull is a quadrilateral and we need all lines in the
-				// correct order where line [0, q0, 1, q3] is part of the hull.
-				: [
-					[ 0, dq0 ],
-					[ 1 / 3, dq1 ],
-					[ 2 / 3, dq2 ],
-					[ 1, dq3 ]
-				];
+				// correct order where line [ p1, p3 ] is part of the hull.
+				: [ p0, p1, p2, p3 ];
 	}
 /*#*/ } // options.fatline
 

@@ -35,13 +35,13 @@ var paper = new function() {
 // Inline Bootstrap core (the Base class) inside the paper scope first:
 /*#*/ include('../lib/straps.js');
 
-/*#*/ if (options.version == 'dev') {
-/*#*/ include('constants.js');
-/*#*/ } // options.version == 'dev'
-
 /*#*/ if (options.stats) {
 /*#*/ include('../lib/stats.js');
 /*#*/ } // options.stats
+
+/*#*/ if (options.version == 'dev') {
+/*#*/ include('constants.js');
+/*#*/ } // options.version == 'dev'
 
 /*#*/ include('core/Base.js');
 /*#*/ include('core/Callback.js');

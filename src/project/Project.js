@@ -72,11 +72,6 @@ var Project = PaperScopeItem.extend(/** @lends Project# */{
 		return Base.serialize(this.layers, options, false, dictionary);
 	},
 
-	_needsRedraw: function() {
-		if (this.view)
-			this.view._redrawNeeded = true;
-	},
-
 	/**
 	 * Activates this project, so all newly created items will be placed
 	 * in it.
@@ -271,6 +266,11 @@ var Project = PaperScopeItem.extend(/** @lends Project# */{
 	// DOCS: Figure out a way to group these together with importSVG / exportSVG
 
 	importJSON: function(json) {
+		json = typeof json === 'string' ? JSON.parse(json) : json;
+		// Unbox project data, as we don't want to create a new project object.
+		if (json[0] === 'Project')
+			json = json[1];
+		this.activate();
 		return Base.importJSON(json);
 	},
 

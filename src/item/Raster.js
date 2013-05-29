@@ -295,14 +295,22 @@ var Raster = Item.extend(/** @lends Raster# */{
 		} else if (!image.src) {
 			image.src = src;
 		}
-/*#*/ } else if (options.node) {
-		// If we're running on the server and it's a string,
-		// load it from disk:
-		// TODO: load images async, calling setImage once loaded as above
-		var image = new Image();
-		image.src = fs.readFileSync(src);
-/*#*/ } // options.node
 		this.setImage(image);
+/*#*/ } else if (options.node) {
+		var image = new Image();
+		// If we're running on the server and it's a string,
+		// check if it is a data URL
+		if (/^data:/.test(src)) {
+			// Preserve the data in this._data since canvas-node eats it.
+			// TODO: Fix canvas-node instead
+			image.src = this._data = src;
+		} else {
+			// Load it from disk:
+			// TODO: load images async, calling setImage once loaded as above.
+			image.src = fs.readFileSync(src);
+		}
+		this.setImage(image);
+/*#*/ } // options.node
 	},
 
 	// DOCS: document Raster#getElement
@@ -333,9 +341,14 @@ var Raster = Item.extend(/** @lends Raster# */{
 	toDataURL: function() {
 		// See if the linked image is base64 encoded already, if so reuse it,
 		// otherwise try using canvas.toDataURL()
+/*#*/ if (options.node) {
+		if (this._data)
+			return this._data;
+/*#*/ } else {
 		var src = this._image && this._image.src;
 		if (/^data:/.test(src))
 			return src;
+/*#*/ }
 		var canvas = this.getCanvas();
 		return canvas ? canvas.toDataURL() : null;
 	},

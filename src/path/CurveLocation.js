@@ -37,7 +37,11 @@ var CurveLocation = Base.extend(/** @lends CurveLocation# */{
 	 * @param {Point} point
 	 */
 	initialize: function CurveLocation(curve, parameter, point, _otherCurve,
+<<<<<<< HEAD
 			_distance) {
+=======
+			_otherParameter, _distance) {
+>>>>>>> 7faf2a9e705dbe604af9ad2618155fbe9f7386a1
 		// Define this CurveLocation's unique id.
 		this._id = CurveLocation._id = (CurveLocation._id || 0) + 1;
 		this._curve = curve;
@@ -49,6 +53,7 @@ var CurveLocation = Base.extend(/** @lends CurveLocation# */{
 		this._parameter = parameter;
 		this._point = point;
 		this._otherCurve = _otherCurve;
+		this._otherParameter = _otherParameter;
 		this._distance = _distance;
 	},
 
@@ -110,10 +115,16 @@ var CurveLocation = Base.extend(/** @lends CurveLocation# */{
 	getIntersection: function() {
 		var intersection = this._intersection;
 		if (!intersection && this._otherCurve) {
-			// _point is always defined for intersection
-			intersection = this._intersection = new CurveLocation(
-					this._otherCurve, null, this._point, this);
-			// Link both ways
+			var param = this._otherParameter;
+			// If we have the parameter on the other curve use that for
+			// intersection rather than the point.
+			this._intersection = intersection = new CurveLocation(
+					this._otherCurve, param, param ? null : this._point, this);
+			// Force calculate the other point from the parameter.
+			// DEBUG: @jlehni - Not sure why we have to do this? Shouldn't
+			// it auto-calculate upon first access?!
+			if (param)
+				intersection.getPoint();
 			intersection._intersection = this;
 		}
 		return intersection;

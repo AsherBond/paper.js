@@ -864,7 +864,8 @@ statics: {
 				step /= 2;
 		}
 		var pt = Curve.evaluate(values, minT, true, 0);
-		return new CurveLocation(this, minT, pt, null, point.getDistance(pt));
+		return new CurveLocation(this, minT, pt, null, null,
+				point.getDistance(pt));
 	},
 
 	getNearestPoint: function(point) {
@@ -1024,13 +1025,13 @@ new function() { // Scope for methods that require numerical integration
 		}
 	};
 }, new function() { // Scope for intersection using bezier fat-line clipping
-	function addLocation(locations, curve1, parameter, point, curve2) {
+	function addLocation(locations, curve1, t1, point, curve2, t2) {
 		// Avoid duplicates when hitting segments (closed paths too)
 		var first = locations[0],
 			last = locations[locations.length - 1];
 		if ((!first || !point.equals(first._point))
 				&& (!last || !point.equals(last._point)))
-			locations.push(new CurveLocation(curve1, parameter, point, curve2));
+			locations.push(new CurveLocation(curve1, t1, point, curve2, t2));
 	}
 
 	function addCurveIntersections(v1, v2, curve1, curve2, locations,
@@ -1113,39 +1114,14 @@ new function() { // Scope for methods that require numerical integration
 				}
 			}
 			// We need to bailout of clipping and try a numerically stable
-			// method if any of the following are true.
-			//  1. One of the parameter ranges is converged to a point.
-			//  2. Both of the parameter ranges have converged reasonably well
+			// method if both of the parameter ranges have converged reasonably well
 			//     (according to Numerical.TOLERANCE).
-			//  3. One of the parameter range is converged enough so that it is
-			//     *flat enough* to calculate line curve intersection implicitly
-			//
-			// Check if one of the parameter range has converged completely to a
-			// point. Now things could get only worse if we iterate more for the
-			// other curve to converge if it hasn't yet happened so.
-			if (Math.abs(range1[1] - range1[0]) < /*#=*/ Numerical.TOLERANCE) {
-				var t = (range1[0] + range1[1]) / 2;
-				addLocation(locations, curve1, t,
-						Curve.evaluate(v1, t, true, 0), curve2);
-				break;
-			}
-			if (Math.abs(range2[1] - range2[0]) < /*#=*/ Numerical.TOLERANCE) {
-				var t = (range2[0] + range2[1]) / 2;
-				addLocation(locations, curve2, t,
-						Curve.evaluate(v2, t, true, 0), curve1);
-				break;
-			}
-			// see if either or both of the curves are flat enough to be treated
-			// as lines.
-			var flat1 = Curve.isFlatEnough(part1, /*#=*/ Numerical.TOLERANCE),
-				flat2 = Curve.isFlatEnough(part2, /*#=*/ Numerical.TOLERANCE);
-			if (flat1 || flat2) {
-				(flat1 && flat2
-						? addLineIntersection
-						// Use curve line intersection method while specifying
-						// which curve to be treated as line
-						: addCurveLineIntersections)(part1, part2,
-								curve1, curve2, locations, flat1);
+			if (Math.abs(range1[1] - range1[0]) < /*#=*/ Numerical.TOLERANCE &&
+				Math.abs(range2[1] - range2[0]) < /*#=*/ Numerical.TOLERANCE) {
+				var t1 = (range1[0] + range1[1]) / 2,
+					t2 = (range2[0] + range2[1]) / 2;
+				addLocation(locations, curve1, t1,
+						Curve.evaluate(v1, t1, true, 0), curve2, t2);
 				break;
 			}
 		}
@@ -1389,7 +1365,7 @@ new function() { // Scope for methods that require numerical integration
 					addLocation(locations,
 							flip ? curve2 : curve1,
 							// The actual intersection point
-							t, Curve.evaluate(vc, t, true, 0), 
+							t, Curve.evaluate(vc, t, true, 0),
 							flip ? curve1 : curve2);
 			}
 		}

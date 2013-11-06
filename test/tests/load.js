@@ -31,6 +31,7 @@
 
 /*#*/ include('Path.js');
 /*#*/ include('Style.js');
+/*#*/ include('Curve.js');
 /*#*/ include('Path_Shapes.js');
 /*#*/ include('Path_Drawing_Commands.js');
 /*#*/ include('Path_Curves.js');
@@ -41,6 +42,8 @@
 /*#*/ include('PlacedSymbol.js');
 
 /*#*/ include('Raster.js');
+
+/*#*/ include('TextItem.js');
 
 /*#*/ include('HitResult.js');
 

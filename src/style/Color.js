@@ -227,7 +227,7 @@ var Color = Base.extend(new function() {
 						var current = this._components[0];
 						value = Gradient.read(
 								Array.isArray(value) ? value : arguments,
-								0, 0, false, true); // readNull
+								0, 0, true); // readNull
 						if (current !== value) {
 							if (current)
 								current._removeOwner(this);
@@ -244,9 +244,9 @@ var Color = Base.extend(new function() {
 						}
 						: type === 'gradient'
 							? function(value) {
-								// ..., clone, readNull);
-								return Point.read(arguments, 0, 0, true,
-										name === 'highlight');
+								// ..., readNull, clone);
+								return Point.read(arguments, 0, 0,
+										name === 'highlight', true);
 							}
 							: function(value) {
 								return isNaN(value) ? 0
@@ -697,9 +697,12 @@ var Color = Base.extend(new function() {
 		 * @return {Boolean} {@true if the colors are the same}
 		 */
 		equals: function(color) {
-			return color && this._type === color._type
+			if (Base.isPlainValue(color))
+				color = Color.read(arguments);
+			return color === this || color && this._type === color._type
 					&& this._alpha === color._alpha
-					&& Base.equals(this._components, color._components);
+					&& Base.equals(this._components, color._components)
+					|| false;
 		},
 
 		/**
@@ -725,7 +728,7 @@ var Color = Base.extend(new function() {
 		/**
 		 * @return {String} A css string representation of the color.
 		 */
-		toCss: function(noAlpha) {
+		toCSS: function(noAlpha) {
 			var components = this._convert('rgb'),
 				alpha = noAlpha || this._alpha == null ? 1 : this._alpha;
 			components = [
@@ -736,7 +739,7 @@ var Color = Base.extend(new function() {
 			if (alpha < 1)
 				components.push(alpha);
 			return (components.length == 4 ? 'rgba(' : 'rgb(')
-					+ components.join(', ') + ')';
+					+ components.join(',') + ')';
 		},
 
 		toCanvasStyle: function(ctx) {
@@ -744,7 +747,7 @@ var Color = Base.extend(new function() {
 				return this._canvasStyle;
 			// Normal colors are simply represented by their css string.
 			if (this._type !== 'gradient')
-				return this._canvasStyle = this.toCss();
+				return this._canvasStyle = this.toCSS();
 			// Gradient code form here onwards
 			var components = this._components,
 				gradient = components[0],

@@ -110,8 +110,10 @@ var Matrix = Base.extend(/** @lends Matrix# */{
 	 * @return {Boolean} {@true if the matrices are equal}
 	 */
 	equals: function(mx) {
-		return mx && this._a == mx._a && this._b == mx._b && this._c == mx._c
-				&& this._d == mx._d && this._tx == mx._tx && this._ty == mx._ty;
+		return mx === this || mx && this._a == mx._a && this._b == mx._b
+				&& this._c == mx._c && this._d == mx._d && this._tx == mx._tx
+				&& this._ty == mx._ty
+				|| false;
 	},
 
 	/**
@@ -158,7 +160,7 @@ var Matrix = Base.extend(/** @lends Matrix# */{
 		// Do not modify scale, center, since that would arguments of which
 		// we're reading from!
 		var _scale = Point.read(arguments),
-			_center = Point.read(arguments, 0, 0, false, true); // readNull
+			_center = Point.read(arguments, 0, 0, true); // readNull
 		if (_center)
 			this.translate(_center);
 		this._a *= _scale.x;
@@ -263,7 +265,7 @@ var Matrix = Base.extend(/** @lends Matrix# */{
 		// Do not modify point, center, since that would arguments of which
 		// we're reading from!
 		var _point = Point.read(arguments),
-			_center = Point.read(arguments, 0, 0, false, true); // readNull
+			_center = Point.read(arguments, 0, 0, true); // readNull
 		if (_center)
 			this.translate(_center);
 		var a = this._a,

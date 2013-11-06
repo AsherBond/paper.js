@@ -15,6 +15,8 @@
  * @namespace
  */
 
+// Locally override define, so acorn.js does not export itself
+var define = null;
 /*#*/ if (options.parser == 'acorn') {
 /*#*/ include('../../lib/acorn-min.js');
 /*#*/ } else if (options.parser == 'esprima') {
@@ -135,6 +137,11 @@ var PaperScript = new function() {
 
 		// Recursively walks the AST and replaces the code of certain nodes
 		function walkAst(node) {
+			// array[i++] is a MemberExpression with computed = true.
+			// We cannot replace that with array[_$_(i, "+", 1)], as it would
+			// break the code, so let's bail out.
+			if (!node || node.type === 'MemberExpression' && node.computed)
+				return;
 			for (var key in node) {
 				if (key === 'range')
 					continue;

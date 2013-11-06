@@ -36,12 +36,17 @@ var CurveLocation = Base.extend(/** @lends CurveLocation# */{
 	 * @param {Number} parameter
 	 * @param {Point} point
 	 */
+<<<<<<< HEAD
 	initialize: function CurveLocation(curve, parameter, point, _otherCurve,
 <<<<<<< HEAD
 			_distance) {
 =======
 			_otherParameter, _distance) {
 >>>>>>> 7faf2a9e705dbe604af9ad2618155fbe9f7386a1
+=======
+	initialize: function CurveLocation(curve, parameter, point, _curve2,
+			_parameter2, _point2, _distance) {
+>>>>>>> ca0513b1b2b2345d980c50be1e55b7268f0b7327
 		// Define this CurveLocation's unique id.
 		this._id = CurveLocation._id = (CurveLocation._id || 0) + 1;
 		this._curve = curve;
@@ -52,8 +57,9 @@ var CurveLocation = Base.extend(/** @lends CurveLocation# */{
 		this._segment2 = curve._segment2;
 		this._parameter = parameter;
 		this._point = point;
-		this._otherCurve = _otherCurve;
-		this._otherParameter = _otherParameter;
+		this._curve2 = _curve2;
+		this._parameter2 = _parameter2;
+		this._point2 = _point2;
 		this._distance = _distance;
 	},
 
@@ -114,17 +120,12 @@ var CurveLocation = Base.extend(/** @lends CurveLocation# */{
 	 */
 	getIntersection: function() {
 		var intersection = this._intersection;
-		if (!intersection && this._otherCurve) {
-			var param = this._otherParameter;
+		if (!intersection && this._curve2) {
+			var param = this._parameter2;
 			// If we have the parameter on the other curve use that for
 			// intersection rather than the point.
 			this._intersection = intersection = new CurveLocation(
-					this._otherCurve, param, param ? null : this._point, this);
-			// Force calculate the other point from the parameter.
-			// DEBUG: @jlehni - Not sure why we have to do this? Shouldn't
-			// it auto-calculate upon first access?!
-			if (param)
-				intersection.getPoint();
+					this._curve2, param, this._point2 || this._point, this);
 			intersection._intersection = this;
 		}
 		return intersection;
@@ -201,8 +202,8 @@ var CurveLocation = Base.extend(/** @lends CurveLocation# */{
 	 * @type Point
 	 * @bean
 	 */
-	getPoint: function() {
-		if (!this._point && this._parameter != null) {
+	getPoint: function(/* uncached */) {
+		if ((!this._point || arguments[0]) && this._parameter != null) {
 			var curve = this.getCurve();
 			this._point = curve && curve.getPointAt(this._parameter, true);
 		}

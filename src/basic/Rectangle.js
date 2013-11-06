@@ -201,9 +201,12 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	 * @return {Boolean} {@true if the rectangles are equal}
 	 */
 	equals: function(rect) {
-		rect = Rectangle.read(arguments);
-		return this.x == rect.x && this.y == rect.y
-				&& this.width == rect.width && this.height == rect.height;
+		if (Base.isPlainValue(rect))
+			rect = Rectangle.read(arguments);
+		return rect === this
+				|| rect && this.x === rect.x && this.y === rect.y
+					&& this.width === rect.width && this.height=== rect.height
+				|| false;
 	},
 
 	/**
@@ -259,8 +262,21 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 
 	setSize: function(size) {
 		size = Size.read(arguments);
+		// Keep track of how dimensions were specified through this._fix*
+		// attributes.
+		// _fixX / Y can either be 0 (l), 0.5 (center) or 1 (r), and is used as
+		// direct factors to calculate the x / y adujstments from the size
+		// differences.
+		// _fixW / H is either 0 (off) or 1 (on), and is used to protect
+		// widht / height values against changes.
+		if (this._fixX)
+			this.x += (this.width - size.width) * this._fixX;
+		if (this._fixY)
+			this.y += (this.height - size.height) * this._fixY;
 		this.width = size.width;
 		this.height = size.height;
+		this._fixW = 1;
+		this._fixH = 1;
 	},
 
 	/**
@@ -277,8 +293,10 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	},
 
 	setLeft: function(left) {
-		this.width -= left - this.x;
+		if (!this._fixW)
+			this.width -= left - this.x;
 		this.x = left;
+		this._fixX = 0;
 	},
 
 	/**
@@ -293,8 +311,10 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	},
 
 	setTop: function(top) {
-		this.height -= top - this.y;
+		if (!this._fixH)
+			this.height -= top - this.y;
 		this.y = top;
+		this._fixY = 0;
 	},
 
 	/**
@@ -309,7 +329,14 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	},
 
 	setRight: function(right) {
-		this.width = right - this.x;
+		// Turn _fixW off if we specify two _fixX values
+		if (this._fixX !== undefined && this._fixX !== 1)
+			this._fixW = 0;
+		if (this._fixW)
+			this.x = right - this.width;
+		else
+			this.width = right - this.x;
+		this._fixX = 1;
 	},
 
 	/**
@@ -324,7 +351,14 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	},
 
 	setBottom: function(bottom) {
-		this.height = bottom - this.y;
+		// Turn _fixH off if we specify two _fixY values
+		if (this._fixY !== undefined && this._fixY !== 1)
+			this._fixH = 0;
+		if (this._fixH)
+			this.y = bottom - this.height;
+		else
+			this.height = bottom - this.y;
+		this._fixY = 1;
 	},
 
 	/**
@@ -340,6 +374,7 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 
 	setCenterX: function(x) {
 		this.x = x - this.width * 0.5;
+		this._fixX = 0.5;
 	},
 
 	/**
@@ -355,6 +390,7 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 
 	setCenterY: function(y) {
 		this.y = y - this.height * 0.5;
+		this._fixY = 0.5;
 	},
 
 	/**

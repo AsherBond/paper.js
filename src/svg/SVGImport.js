@@ -24,7 +24,7 @@ new function() {
 			value = namespace
 				? node.getAttributeNS(namespace, name)
 				: node.getAttribute(name);
-		if (value == 'null')
+		if (value === 'null')
 			value = null;
 		// Interpret value as number. Never return NaN, but 0 instead.
 		// If the value is a sequence of numbers, parseFloat will
@@ -55,15 +55,18 @@ new function() {
 	}
 
 	// Converts a string attribute value to the specified type
-	function convertValue(value, type) {
+	function convertValue(value, type, lookup) {
 		return value === 'none'
 				? null
 				: type === 'number'
 					? parseFloat(value)
 					: type === 'array'
 						? value ? value.split(/[\s,]+/g).map(parseFloat) : []
-						: type === 'color' && getDefinition(value)
-							|| value;
+						: type === 'color'
+							? getDefinition(value) || value
+							: type === 'lookup'
+								? lookup[value]
+								: value;
 	}
 
 	// Importer functions for various SVG node types
@@ -73,32 +76,36 @@ new function() {
 			clip = type === 'clippath',
 			item = clip ? new CompoundPath() : new Group(),
 			project = item._project,
-			currentStyle = project._currentStyle;
-		// Style on items needs to be handled differently than all other items:
-		// We first apply the style to the item, then use it as the project's
-		// currentStyle, so it is used as a default for the creation of all
-		// nested items. importSVG then needs to check for items and avoid
-		// calling applyAttributes() again.
-		// Set the default color to black, since that's how SVG handles fills.
-		item.setFillColor('black');
+			currentStyle = project._currentStyle,
+			children = [];
 		if (!clip) {
+			// Have the group not pass on all transformations to its children,
+			// as this is how SVG works too.
+			item._transformContent = false;
 			item = applyAttributes(item, node);
+			// Style on items needs to be handled differently than all other
+			// items: We first apply the style to the item, then use it as the
+			// project's currentStyle, so it is used as a default for the
+			// creation of all nested items. importSVG then needs to check for
+			// items and avoid calling applyAttributes() again.
 			project._currentStyle = item._style.clone();
 		}
+		// Collect the children in an array and apply them all at once.
 		for (var i = 0, l = nodes.length; i < l; i++) {
 			var childNode = nodes[i],
 				child;
 			if (childNode.nodeType == 1 && (child = importSVG(childNode))) {
-				// If adding CompoundPaths to other CompoundPaths,
+				// When adding CompoundPaths to other CompoundPaths,
 				// we need to "unbox" them first:
-				if (clip && child._type === 'compound-path') {
-					item.addChildren(child.removeChildren());
+				if (clip && child instanceof CompoundPath) {
+					children.push.apply(children, child.removeChildren());
 					child.remove();
 				} else if (!(child instanceof Symbol)) {
-					item.addChild(child);
+					children.push(child);
 				}
 			}
 		}
+		item.addChildren(children);
 		// clip paths are reduced (unboxed) and their attributes applied at the
 		// end.
 		if (clip)
@@ -318,7 +325,7 @@ new function() {
 	function applyOpacity(item, value, name) {
 		// http://www.w3.org/TR/SVG/painting.html#FillOpacityProperty
 		// http://www.w3.org/TR/SVG/painting.html#StrokeOpacityProperty
-		var color = item._style[name === 'fill-opacity' ? 'getFillColor'
+		var color = item[name === 'fill-opacity' ? 'getFillColor'
 				: 'getStrokeColor']();
 		if (color)
 			color.setAlpha(parseFloat(value));
@@ -330,7 +337,8 @@ new function() {
 	// can affect gradient fills.
 	var attributes = Base.merge(Base.each(SVGStyles, function(entry) {
 		this[entry.attribute] = function(item, value, name, node) {
-			item._style[entry.set](convertValue(value, entry.type));
+			item[entry.set](
+					convertValue(value, entry.type, entry.fromSVG));
 		};
 	}, {}), {
 		id: function(item, value) {
@@ -345,37 +353,20 @@ new function() {
 			if (clip) {
 				clip = clip.clone();
 				clip.setClipMask(true);
-				return new Group(clip, item);
+				// If item is already a group, move the clip-path inside
+				if (item instanceof Group) {
+					item.insertChild(0, clip);
+				} else {
+					return new Group(clip, item);
+				}
 			}
 		},
 
 		gradientTransform: applyTransform,
 		transform: applyTransform,
 
-		opacity: function(item, value) {
-			// http://www.w3.org/TR/SVG/masking.html#OpacityProperty
-			item.setOpacity(parseFloat(value));
-		},
-
 		'fill-opacity': applyOpacity,
 		'stroke-opacity': applyOpacity,
-
-		'font-family': function(item, value) {
-			item.setFont(value.split(',')[0].replace(/^\s+|\s+$/g, ''));
-		},
-
-		'font-size': function(item, value) {
-			item.setFontSize(parseFloat(value));
-		},
-
-		'text-anchor': function(item, value) {
-			// http://www.w3.org/TR/SVG/text.html#TextAnchorProperty
-			item.setJustification({
-				start: 'left',
-				middle: 'center',
-				end: 'right'
-			}[value]);
-		},
 
 		visibility: function(item, value) {
 			item.setVisible(value === 'visible');
@@ -497,7 +488,7 @@ new function() {
 			item = importer && importer(node, type),
 			data = node.getAttribute('data-paper-data');
 		// See importGroup() for an explanation of this filtering:
-		if (item && item._type !== 'group')
+		if (item && !(item instanceof Group))
 			item = applyAttributes(item, node);
 		if (item && data)
 			item._data = JSON.parse(data);

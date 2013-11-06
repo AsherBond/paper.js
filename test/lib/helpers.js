@@ -10,6 +10,23 @@
  * All rights reserved.
  */
 
+// Register a jsDump parser for Base.
+QUnit.jsDump.setParser('Base', function (obj, stack) {
+	// Just compare the string representation of classes inheriting from Base,
+	// since they hide the internal values.
+	return obj.toString();
+});
+
+// Override the default object parser to handle Base objects.
+// We need to keep a reference to the previous implementation.
+var objectParser = QUnit.jsDump.parsers.object;
+
+QUnit.jsDump.setParser('object', function (obj, stack) {
+	return (obj instanceof Base
+			? QUnit.jsDump.parsers.Base
+			: objectParser).call(this, obj, stack);
+});
+
 // Override equals to convert functions to message and execute them as tests()
 function equals(actual, expected, message, tolerance) {
 	if (typeof actual === 'function') {
@@ -30,15 +47,15 @@ function equals(actual, expected, message, tolerance) {
 	if (tolerance !== undefined) {
 		var ok = Math.abs(actual - expected) <= tolerance;
 		return QUnit.push(ok, ok ? expected : actual, expected, message);
+	} else if (actual && actual.equals) {
+		// Support calling of #equals() on the actual or expected value, and
+		// automatically convert displayed values to strings.
+		return QUnit.push(actual.equals(expected), actual, expected, message);
 	} else if (expected && expected.equals) {
-		// Support calling of #equals() on the expected value, and automatically
-		// convert displayed values to strings.
-		return QUnit.push(expected.equals(actual), actual + '', expected + '',
-				message);
-	} else {
-		// Let's be strict
-		return strictEqual(actual, expected, message);
+		return QUnit.push(expected.equals(actual), actual, expected, message);
 	}
+	// Let's be strict
+	return strictEqual(actual, expected, message);
 }
 
 function test(testName, expected) {
@@ -88,11 +105,15 @@ function compareRectangles(rect1, rect2, message) {
 }
 
 function compareColors(color1, color2, message, precision) {
-	color1 = new Color(color1);
-	color2 = new Color(color2);
-	equals(color1.type, color2.type, (message || '') + ' type');
-	compareArrays(color1.components, color2.components,
-			(message || '') + ' components', precision);
+	color1 = color1 && new Color(color1);
+	color2 = color2 && new Color(color2);
+	if (color1 && color2) {
+		equals(color1.type, color2.type, (message || '') + ' type');
+		compareArrays(color1.components, color2.components,
+				(message || '') + ' components', precision);
+	} else {
+		equals(color1, color2, message);
+	}
 }
 
 function compareStyles(style, style2, checkIdentity) {

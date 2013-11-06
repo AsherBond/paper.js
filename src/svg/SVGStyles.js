@@ -11,20 +11,38 @@
  */
 
 var SVGStyles = Base.each({
+	// Fill
 	fillColor: ['fill', 'color'],
+	// Stroke
 	strokeColor: ['stroke', 'color'],
 	strokeWidth: ['stroke-width', 'number'],
 	strokeCap: ['stroke-linecap', 'string'],
 	strokeJoin: ['stroke-linejoin', 'string'],
 	miterLimit: ['stroke-miterlimit', 'number'],
 	dashArray: ['stroke-dasharray', 'array'],
-	dashOffset: ['stroke-dashoffset', 'number']
+	dashOffset: ['stroke-dashoffset', 'number'],
+	// Text
+	font: ['font-family', 'string'],
+	fontSize: ['font-size', 'number'],
+	justification: ['text-anchor', 'lookup', {
+		left: 'start',
+		center: 'middle',
+		right: 'end'
+	}],
+	// Item
+	opacity: ['opacity', 'number'],
+	blendMode: ['mix-blend-mode', 'string']
 }, function(entry, key) {
-	var part = Base.capitalize(key);
+	var part = Base.capitalize(key),
+		lookup = entry[2];
 	this[key] = {
 		type: entry[1],
 		property: key,
 		attribute: entry[0],
+		toSVG: lookup,
+		fromSVG: lookup && Base.each(lookup, function(value, name) {
+			this[value] = name;
+		}, {}),
 		get: 'get' + part,
 		set: 'set' + part
 	};

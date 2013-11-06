@@ -72,6 +72,7 @@ var Style = Base.extend(new function() {
 		// path styles
 		fillColor: undefined,
 		strokeColor: undefined,
+		selectedColor: undefined,
 		strokeWidth: 1,
 		strokeCap: 'butt',
 		strokeJoin: 'miter',
@@ -168,7 +169,7 @@ var Style = Base.extend(new function() {
 				} else if (isColor && !(value && value.constructor === Color)) {
 					// Convert to a Color and stored result of conversion.
 					this._values[key] = value = Color.read(
-							[value], 0, 0, true, true); // readNull
+							[value], 0, 0, true, true); // readNull, clone);
 					if (value)
 						value._owner = this._item;
 				}
@@ -176,7 +177,7 @@ var Style = Base.extend(new function() {
 			}
 			for (var i = 0, l = children.length; i < l; i++) {
 				var childValue = children[i]._style[get]();
-				if (!value) {
+				if (i === 0) {
 					value = childValue;
 				} else if (!Base.equals(value, childValue)) {
 					// If there is another item with a different
@@ -201,17 +202,23 @@ var Style = Base.extend(new function() {
 	Item.inject(item);
 	return fields;
 }, /** @lends Style# */{
-	initialize: function Style(style) {
+	initialize: function Style(style, _item) {
 		// We keep values in a separate object that we can iterate over.
 		this._values = {};
-		if (this._item instanceof TextItem)
+		this._item = _item;
+		if (_item instanceof TextItem)
 			this._defaults = this._textDefaults;
-		if (style) {
-			// If the passed style object is also a Style, clone its clonable
-			// fields rather than simply copying them.
-			var isStyle = style instanceof Style,
-				// Use the other stlyle's _values object for iteration
-				values = isStyle ? style._values : style;
+		if (style)
+			this.set(style);
+	},
+
+	set: function(style) {
+		// If the passed style object is also a Style, clone its clonable
+		// fields rather than simply copying them.
+		var isStyle = style instanceof Style,
+			// Use the other stlyle's _values object for iteration
+			values = isStyle ? style._values : style;
+		if (values) {
 			for (var key in values) {
 				if (key in this._defaults) {
 					var value = values[key];
@@ -233,7 +240,7 @@ var Style = Base.extend(new function() {
 		var size = this.getFontSize();
 		return (/[a-z]/i.test(size) ? size + ' ' : size + 'px ')
 				+ this.getFont();
-	},
+	}
 
 	// DOCS: why isn't the example code showing up?
 	/**
@@ -406,6 +413,17 @@ var Style = Base.extend(new function() {
 	 *
 	 * // Set the fill color of the circle to RGB red:
 	 * circle.fillColor = new Color(1, 0, 0);
+	 */
+
+	/**
+	 * {@grouptitle Selection Style}
+	 *
+	 * The color the item is highlighted with when selected. If the item does
+	 * not specify its own color, the color defined by its layer is used instead.
+	 *
+	 * @name Style#selectedColor
+	 * @property
+	 * @type Color
 	 */
 
 	/**

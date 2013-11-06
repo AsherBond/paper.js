@@ -166,13 +166,22 @@ new function() {
 	function exportGroup(item) {
 		var attrs = getTransform(item),
 			children = item._children;
-		// Override default SVG style on groups, then apply style.
-		attrs.fill = 'none';
 		var node = createElement('g', attrs);
 		for (var i = 0, l = children.length; i < l; i++) {
-			var child = exportSVG(children[i]);
-			if (child)
-				node.appendChild(child);
+			var child = children[i];
+			var childNode = exportSVG(child);
+			if (childNode) {
+				if (child.isClipMask()) {
+					var clip = createElement('clipPath');
+					clip.appendChild(childNode);
+					setDefinition(child, clip, 'clip');
+					setAttributes(node, {
+						'clip-path': 'url(#' + clip.id + ')'
+					});
+				} else {
+					node.appendChild(childNode);
+				}
+			}
 		}
 		return node;
 	}
@@ -180,26 +189,13 @@ new function() {
 	function exportRaster(item) {
 		var attrs = getTransform(item, true),
 			size = item.getSize();
+		// Take into account that rasters are centered:
 		attrs.x -= size.width / 2;
 		attrs.y -= size.height / 2;
 		attrs.width = size.width;
 		attrs.height = size.height;
 		attrs.href = item.toDataURL();
 		return createElement('image', attrs);
-	}
-
-	function exportText(item) {
-		var attrs = getTransform(item, true),
-			style = item._style,
-			font = style.getFont(),
-			fontSize = style.getFontSize();
-		if (font)
-			attrs['font-family'] = font;
-		if (fontSize)
-			attrs['font-size'] = fontSize;
-		var node = createElement('text', attrs);
-		node.textContent = item._content;
-		return node;
 	}
 
 	function exportPath(item) {
@@ -266,10 +262,10 @@ new function() {
 			var first = segments[0]._point,
 				last = segments[segments.length - 1]._point;
 			attrs = {
-				x1: first._x,
-				y1: first._y,
-				x2: last._x,
-				y2: last._y
+				x1: first.x,
+				y1: first.y,
+				x2: last.x,
+				y2: last.y
 			};
 			break;
 		case 'circle':
@@ -311,7 +307,7 @@ new function() {
 	function exportPlacedSymbol(item) {
 		var attrs = getTransform(item, true),
 			symbol = item.getSymbol(),
-			symbolNode = getDefinition(symbol);
+			symbolNode = getDefinition(symbol, 'symbol');
 			definition = symbol.getDefinition(),
 			bounds = definition.getBounds();
 		if (!symbolNode) {
@@ -319,7 +315,7 @@ new function() {
 				viewBox: formatter.rectangle(bounds)
 			});
 			symbolNode.appendChild(exportSVG(definition));
-			setDefinition(symbol, symbolNode);
+			setDefinition(symbol, symbolNode, 'symbol');
 		}
 		attrs.href = '#' + symbolNode.id;
 		attrs.x += bounds.x;
@@ -335,7 +331,7 @@ new function() {
 		// even when they share the same gradient defintion.
 		// http://www.svgopen.org/2011/papers/20-Separating_gradients_from_geometry/
 		// TODO: Implement gradient merging in SVGImport
-		var gradientNode = getDefinition(color);
+		var gradientNode = getDefinition(color, 'color');
 		if (!gradientNode) {
 			var gradient = color.getGradient(),
 				radial = gradient._radial,
@@ -373,7 +369,7 @@ new function() {
 					alpha = stopColor.getAlpha();
 				attrs = {
 					offset: stop._rampPoint,
-					'stop-color': stopColor.toCss(true)
+					'stop-color': stopColor.toCSS(true)
 				};
 				// See applyStyle for an explanation of why there are separated
 				// opacity / color attributes.
@@ -381,9 +377,15 @@ new function() {
 					attrs['stop-opacity'] = alpha;
 				gradientNode.appendChild(createElement('stop', attrs));
 			}
-			setDefinition(color, gradientNode);
+			setDefinition(color, gradientNode, 'color');
 		}
 		return 'url(#' + gradientNode.id + ')';
+	}
+
+	function exportText(item) {
+		var node = createElement('text', getTransform(item, true));
+		node.textContent = item._content;
+		return node;
 	}
 
 	var exporters = {
@@ -391,16 +393,14 @@ new function() {
 		layer: exportGroup,
 		raster: exportRaster,
 		path: exportPath,
-		'point-text': exportText,
+		'compound-path': exportCompoundPath,
 		'placed-symbol': exportPlacedSymbol,
-		'compound-path': exportCompoundPath
+		'point-text': exportText
 	};
 
 	function applyStyle(item, node) {
 		var attrs = {},
-			style = item._style,
-			parent = item.getParent(),
-			parentStyle = parent && parent._style;
+			parent = item.getParent();
 
 		if (item._name != null)
 			attrs.id = item._name;
@@ -408,9 +408,11 @@ new function() {
 		Base.each(SVGStyles, function(entry) {
 			// Get a given style only if it differs from the value on the parent
 			// (A layer or group which can have style values in SVG).
-			var value = style[entry.get]();
-			if (!parentStyle || !Base.equals(parentStyle[entry.get](), value)) {
-				if (entry.type === 'color' && value != null) {
+			var get = entry.get,
+				type = entry.type,
+				value = item[get]();
+			if (!parent || !Base.equals(parent[get](), value)) {
+				if (type === 'color' && value != null) {
 					// Support for css-style rgba() values is not in SVG 1.1, so
 					// separate the alpha value of colors with alpha into the
 					// separate fill- / stroke-opacity attribute:
@@ -420,20 +422,23 @@ new function() {
 				}
 				attrs[entry.attribute] = value == null
 					? 'none'
-					: entry.type === 'color'
-						? value.gradient
-							? exportGradient(value, item)
-							: value.toCss(true) // false for noAlpha, see above	
-						: entry.type === 'array'
-							? value.join(',')
-							: entry.type === 'number'
-								? formatter.number(value)
-								: value;
+					: type === 'number'
+						? formatter.number(value)
+						: type === 'color'
+							? value.gradient
+								? exportGradient(value, item)
+								// true for noAlpha, see above	
+								: value.toCSS(true)
+							: type === 'array'
+								? value.join(',')
+								: type === 'lookup'
+									? entry.toSVG[value]
+									: value;
 			}
 		});
 
-		if (item._opacity != null && item._opacity < 1)
-			attrs.opacity = item._opacity;
+		if (attrs.opacity === 1)
+			delete attrs.opacity;
 
 		if (item._visibility != null && !item._visibility)
 			attrs.visibility = 'hidden';
@@ -443,17 +448,22 @@ new function() {
 	}
 
 	var definitions;
-	function getDefinition(item) {
+	function getDefinition(item, type) {
 		if (!definitions)
 			definitions = { ids: {}, svgs: {} };
-		return definitions.svgs[item._id];
+		return item && definitions.svgs[type + '-' + item._id];
 	}
 
-	function setDefinition(item, node) {
-		var type = item._type,
-			id = definitions.ids[type] = (definitions.ids[type] || 0) + 1;
+	function setDefinition(item, node, type) {
+		// Make sure the definitions lookup is created before we use it.
+		// This is required by 'clip', where getDefinition() is not called.
+		if (!definitions)
+			getDefinition();
+		// Have different id ranges per type
+		var id = definitions.ids[type] = (definitions.ids[type] || 0) + 1;
+		// Give the svg node an id, and link to it from the item id.
 		node.id = type + '-' + id;
-		definitions.svgs[item._id] = node;
+		definitions.svgs[type + '-' + item._id] = node;
 	}
 
 	function exportDefinitions(node) {
@@ -463,18 +473,24 @@ new function() {
 		// produce one if it's a single item of another type (when calling
 		// #exportSVG() on an item rather than a whole project)
 		// jsdom in Node.js uses uppercase values for nodeName...
-		var container = node.nodeName.toLowerCase() === 'svg' && node,
-			firstChild = container ? container.firstChild : node;
+		var svg = node.nodeName.toLowerCase() === 'svg' && node,
+			firstChild = svg ? svg.firstChild : node,
+			defs = null;
 		for (var i in definitions.svgs) {
-			if (!container) {
-				container = createElement('svg');
-				container.appendChild(node);
+			// This code is inside the loop so we only create a container if we
+			// actually have svgs.
+			if (!defs) {
+				if (!svg) {
+					svg = createElement('svg');
+					svg.appendChild(node);
+				}
+				defs = svg.insertBefore(createElement('defs'), svg.firstChild);
 			}
-			container.insertBefore(definitions.svgs[i], firstChild);
+			defs.appendChild(definitions.svgs[i]);
 		}
 		// Clear definitions at the end of export
 		definitions = null;
-		return container;
+		return svg;
 	}
 
 	function exportSVG(item) {
@@ -495,8 +511,7 @@ new function() {
 		 * @return {SVGSVGElement} the item converted to an SVG node
 		 */
 		exportSVG: function() {
-			var node = exportSVG(this);
-			return exportDefinitions(node);
+			return exportDefinitions(exportSVG(this));
 		}
 	});
 
@@ -510,20 +525,20 @@ new function() {
 		 * @return {SVGSVGElement} the project converted to an SVG node
 		 */
 		exportSVG: function() {
-			var node = createElement('svg'),
-				layers = this.layers,
-				size = this.view.getSize();
+			var layers = this.layers,
+				size = this.view.getSize(),
+				node = createElement('svg', {
+					x: 0,
+					y: 0,
+					width: size.width,
+					height: size.height,
+					version: '1.1',
+					xmlns: 'http://www.w3.org/2000/svg',
+					'xmlns:xlink': 'http://www.w3.org/1999/xlink'
+				});
 			for (var i = 0, l = layers.length; i < l; i++)
 				node.appendChild(exportSVG(layers[i]));
-			return setAttributes(exportDefinitions(node), {
-				x: 0,
-				y: 0,
-				width: size.width,
-				height: size.height,
-				version: '1.1',
-				xmlns: 'http://www.w3.org/2000/svg',
-				xlink: 'http://www.w3.org/1999/xlink'
-			});
+			return exportDefinitions(node);
 		}
 	});
 };

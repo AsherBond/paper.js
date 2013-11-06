@@ -100,6 +100,26 @@ test('getting group styles', function() {
 	compareColors(group.fillColor, 'black', 'group.fillColor');
 });
 
+test('getting group styles 2', function() {
+	var star = new Path.Circle({
+	   center: [100, 100],
+	   radius: 40,
+	   fillColor: 'red'
+	});
+
+	var circle = new Path.Circle({
+	   center: [100, 100],
+	   radius: 25,
+	   strokeColor: 'black'
+	});
+	// Create a group of the two items and clip it:
+	var group = new Group(circle, star);
+
+	equals(function() {
+		return group.fillColor;
+	}, undefined);
+});
+
 test('setting group styles', function() {
 	var group = new Group();
 	var path = new Path();
@@ -126,6 +146,7 @@ test('setting group styles', function() {
 test('setting group styles 2', function() {
 	var group = new Group();
 	var path = new Path();
+	path.strokeColor = 'red';
 	path.fillColor = 'red';
 	group.addChild(path);
 
@@ -141,9 +162,7 @@ test('setting group styles 2', function() {
 
 	// By appending a path with a different fillcolor,
 	// the group's fillColor should return undefined:
-	equals(function() {
-		return group.fillColor;
-	}, undefined);
+	equals(group.fillColor, undefined, 'group.fillColor');
 
 	// But, both paths have a red strokeColor, so:
 	compareColors(group.strokeColor, 'red', 'group.strokeColor');

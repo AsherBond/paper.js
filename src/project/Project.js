@@ -299,12 +299,14 @@ var Project = PaperScopeItem.extend(/** @lends Project# */{
 		this._drawCount++;
 		ctx.save();
 		matrix.applyToContext(ctx);
-		var param = {
+		// Use Base.merge() so we can use param.extend() to easily override
+		// values
+		var param = Base.merge({
 			offset: new Point(0, 0),
 			// A stack of concatenated matrices, to keep track of the current
 			// global matrix, since Canvas is not able tell us (yet).
 			transforms: [matrix]
-		};
+		});
 		for (var i = 0, l = this.layers.length; i < l; i++)
 			this.layers[i].draw(ctx, param);
 		ctx.restore();
@@ -313,18 +315,23 @@ var Project = PaperScopeItem.extend(/** @lends Project# */{
 		if (this._selectedItemCount > 0) {
 			ctx.save();
 			ctx.strokeWidth = 1;
-			// TODO: use Layer#color
-			ctx.strokeStyle = ctx.fillStyle = '#009dec';
 			for (var id in this._selectedItems) {
 				var item = this._selectedItems[id];
 				if (item._drawCount === this._drawCount
 						&& (item._drawSelected || item._boundsSelected)) {
+					// Allow definition of selected color on a per item and per
+					// layer level, with a fallback to #009dec
+					var color = item.getSelectedColor()
+							|| item.getLayer().getSelectedColor();
+					ctx.strokeStyle = ctx.fillStyle = color
+							? color.toCanvasStyle(ctx) : '#009dec';
 					var mx = item._globalMatrix;
 					if (item._drawSelected)
 						item._drawSelected(ctx, mx);
 					if (item._boundsSelected) {
 						// We need to call the internal _getBounds, to get non-
 						// transformed bounds.
+						// TODO: Implement caching for these too!
 						var coords = mx._transformCorners(
 								item._getBounds('getBounds'));
 						// Now draw a rectangle that connects the transformed

@@ -112,7 +112,7 @@ var PathItem = Item.extend(/** @lends PathItem# */{
 			this.removeChildren();
 
 		for (var i = 0, l = parts.length; i < l; i++) {
-			var part = parts[i];
+			var part = parts[i],
 				cmd = part[0],
 				lower = cmd.toLowerCase();
 			// Split at white-space, commas but also before signs.
@@ -177,6 +177,12 @@ var PathItem = Item.extend(/** @lends PathItem# */{
 			}
 		}
 	},
+
+	_canComposite: function() {
+		// A path with only a fill  or a stroke can be directly blended, but if
+		// it has both, it needs to be drawn into a separate canvas first.
+		return !(this.hasFill() && this.hasStroke());
+	}
 
 	/**
 	 * Smooth bezier curves without changing the amount of segments or their

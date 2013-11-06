@@ -204,7 +204,6 @@ var Path = PathItem.extend(/** @lends Path# */{
 	 */
 	getPathData: function(/* precision */) {
 		var segments = this._segments,
-			style = this._style,
 			precision = arguments[0],
 			f = Formatter.instance,
 			parts = [];
@@ -234,15 +233,12 @@ var Path = PathItem.extend(/** @lends Path# */{
 		if (segments.length === 0)
 			return '';
 		parts.push('M' + f.point(segments[0]._point));
-		for (i = 0, l = segments.length  - 1; i < l; i++)
+		for (var i = 0, l = segments.length  - 1; i < l; i++)
 			addCurve(segments[i], segments[i + 1], false);
-		// We only need to draw the connecting curve if it is not a line, and if
-		// the path is closed and has a stroke color, or if it is filled.
-		// TODO: Verify this, sound dodgy
-		if (this._closed && style.getStrokeColor() || style.getFillColor())
+		if (this._closed) {
 			addCurve(segments[segments.length - 1], segments[0], true);
-		if (this._closed)
 			parts.push('z');
+		}
 		return parts.join('');
 	},
 
@@ -299,7 +295,7 @@ var Path = PathItem.extend(/** @lends Path# */{
 		return true;
 	},
 
-	_transformContent: function(matrix) {
+	_applyMatrix: function(matrix) {
 		var coords = new Array(6);
 		for (var i = 0, l = this._segments.length; i < l; i++)
 			this._segments[i]._transformCoordinates(matrix, coords, true);
@@ -1588,19 +1584,18 @@ var Path = PathItem.extend(/** @lends Path# */{
 		return this.getNearestLocation(point).getPoint();
 	},
 
-	hasFill: function() {
-		// If this path is part of a CompoundPath, we need to check that
-		// for fillColor too...
-		return !!(this._style.getFillColor()
-				|| this._parent._type === 'compound-path'
-				&& this._parent._style.getFillColor());
+	getStyle: function() {
+		// If this path is part of a CompoundPath, use the paren't style instead
+		var parent = this._parent;
+		return (parent && parent._type === 'compound-path'
+				? parent : this)._style;
 	},
 
 	_contains: function(point) {
+		var closed = this._closed;
 		// If the path is not closed, we should not bail out in case it has a
 		// fill color!
-		var hasFill = this.hasFill();
-		if (!this._closed && !hasFill
+		if (!closed && !this.hasFill()
 				// We need to call the internal _getBounds, to get non-
 				// transformed bounds.
 				|| !this._getBounds('getRoughBounds')._containsPoint(point))
@@ -1617,74 +1612,170 @@ var Path = PathItem.extend(/** @lends Path# */{
 			segments = this._segments,
 			crossings = 0,
 			// Reuse one array for root-finding, give garbage collector a break
-			roots = new Array(3);
-		for (var i = 0, l = curves.length; i < l; i++)
-			crossings += curves[i].getCrossings(point, roots);
-		// TODO: Do not close open path for contains(), but create a straight
-		// closing lines instead, just like how filling open paths works.
-		if (!this._closed && hasFill)
-			crossings += Curve.create(this, segments[segments.length - 1],
-					segments[0]).getCrossings(point, roots);
+			roots = new Array(3),
+			last = (closed
+					? curves[curves.length - 1]
+					// Create a straight closing line for open paths, just like
+					// how filling open paths works.
+					: new Curve(segments[segments.length - 1]._point,
+						segments[0]._point)).getValues(),
+			previous = last;
+		for (var i = 0, l = curves.length; i < l; i++) {
+			var vals = curves[i].getValues(),
+				x = vals[0],
+				y = vals[1];
+			// Filter out curves with 0-lenght (all 4 points in the same place):
+			if (!(x === vals[2] && y === vals[3] && x === vals[4]
+					&& y === vals[5] && x === vals[6] && y === vals[7])) {
+				crossings += Curve._getCrossings(vals, previous,
+						point.x, point.y, roots);
+				previous = vals;
+			}
+		}
+		if (!closed) {
+			crossings += Curve._getCrossings(last, previous, point.x, point.y,
+					roots);
+		}
 		return (crossings & 1) === 1;
 	},
 
 	_hitTest: function(point, options) {
-		// See #draw() for an explanation of why we can access _style properties
-		// directly here:
-		var style = this._style,
+		var style = this.getStyle(),
+			segments = this._segments,
+			closed = this._closed,
 			tolerance = options.tolerance || 0,
-			radius = (options.stroke && style.getStrokeColor()
-					? style.getStrokeWidth() / 2 : 0) + tolerance,
-			loc,
-			res;
-		// If we're asked to query for segments, ends or handles, do all that
-		// before stroke or fill.
-		var coords = [],
-			that = this;
+			radius = 0, join, cap, miterLimit,
+			that = this,
+			area, loc, res;
+
+		if (options.stroke && style.getStrokeColor()) {
+			join = style.getStrokeJoin();
+			cap = style.getStrokeCap();
+			radius = style.getStrokeWidth() / 2 + tolerance;
+			miterLimit = radius * style.getMiterLimit();
+		}
+
 		function checkPoint(seg, pt, name) {
 			// TODO: We need to transform the point back to the coordinate
 			// system of the DOM level on which the inquiry was started!
 			if (point.getDistance(pt) < tolerance)
 				return new HitResult(name, that, { segment: seg, point: pt });
 		}
-		function checkSegment(seg, ends) {
-			var point = seg._point;
+
+		function checkSegmentPoints(seg, ends) {
+			var pt = seg._point;
 			// Note, when checking for ends, we don't also check for handles,
 			// since this will happen afterwards in a separate loop, see below.
-			return (ends || options.segments)
-					&& checkPoint(seg, point, 'segment')
+			return (ends || options.segments) && checkPoint(seg, pt, 'segment')
 				|| (!ends && options.handles) && (
-					checkPoint(seg, point.add(seg._handleIn), 'handle-in') ||
-					checkPoint(seg, point.add(seg._handleOut), 'handle-out'));
+					checkPoint(seg, pt.add(seg._handleIn), 'handle-in') ||
+					checkPoint(seg, pt.add(seg._handleOut), 'handle-out'));
 		}
-		if (options.ends && !options.segments && !this._closed) {
-			if (res = checkSegment(this.getFirstSegment(), true)
-					|| checkSegment(this.getLastSegment(), true))
+
+		// Code to check stroke join / cap areas
+
+		function addAreaPoint(point) {
+			area.push(point);
+		}
+
+		// In order to be able to reuse crossings counting code, we describe
+		// each line as a curve values array.
+		function getAreaCurve(index) {
+			var p1 = area[index],
+				p2 = area[(index + 1) % area.length];
+			return [p1.x, p1.y, p1.x, p1.y, p2.x, p2.y, p2.x ,p2.y];
+		}
+
+		function isInArea(point) {
+			var length = area.length,
+				previous = getAreaCurve(length - 1),
+				roots = new Array(3),
+				crossings = 0;
+			for (var i = 0; i < length; i++) {
+				var curve = getAreaCurve(i);
+				crossings += Curve._getCrossings(curve, previous,
+						point.x, point.y, roots);
+				previous = curve;
+			}
+			return (crossings & 1) === 1;
+		}
+
+		function checkSegmentStroke(segment) {
+			// Handle joins / caps that are not round specificelly, by
+			// hit-testing their polygon areas.
+			if (join !== 'round' || cap !== 'round') {
+				area = [];
+				if (closed || segment._index > 0
+						&& segment._index < segments.length - 1) {
+					// It's a join. See that it's not a round one (one of
+					// the handles has to be zero too for this!)
+					if (join !== 'round' && (segment._handleIn.isZero() 
+							|| segment._handleOut.isZero()))
+						Path._addSquareJoin(segment, join, radius, miterLimit,
+								addAreaPoint, true);
+				} else if (cap !== 'round') {
+					// It's a cap
+					Path._addSquareCap(segment, cap, radius, addAreaPoint, true);
+				}
+				// See if the above produced an area to check for
+				if (area.length > 0)
+					return isInArea(point);
+			}
+			// Fallback scenario is a round join / cap, but make sure we
+			// didn't check for areas already.
+			return point.getDistance(segment._point) <= radius;
+		}
+
+		// If we're asked to query for segments, ends or handles, do all that
+		// before stroke or fill.
+		if (options.ends && !options.segments && !closed) {
+			if (res = checkSegmentPoints(segments[0], true)
+					|| checkSegmentPoints(segments[segments.length - 1], true))
 				return res;
 		} else if (options.segments || options.handles) {
-			for (var i = 0, l = this._segments.length; i < l; i++) {
-				if (res = checkSegment(this._segments[i]))
+			for (var i = 0, l = segments.length; i < l; i++) {
+				if (res = checkSegmentPoints(segments[i]))
 					return res;
 			}
 		}
 		// If we're querying for stroke, perform that before fill
-		if (options.stroke && radius > 0)
+		if (radius > 0) {
 			loc = this.getNearestLocation(point);
+			if (loc) {
+				// Now see if we're on a segment, and if so, check for its
+				// stroke join / cap first. If not, do a normal radius check
+				// for round strokes.
+				var parameter = loc.getParameter();
+				if (parameter === 0 || parameter === 1) {
+					if (!checkSegmentStroke(loc.getSegment()))
+						loc = null;
+				} else  if (loc._distance > radius) {
+					loc = null;
+				}
+			}
+			// If we have miter joins, we may not be done yet, since they can be
+			// longer than the radius. Check for each segment within reach now.
+			if (!loc && join === 'miter') {
+				for (var i = 0, l = segments.length; i < l; i++) {
+					var segment = segments[i];
+					if (point.getDistance(segment._point) <= miterLimit
+							&& checkSegmentStroke(segment)) {
+						loc = segment.getLocation();
+						break;
+					}
+				}
+			}
+		}
 		// Don't process loc yet, as we also need to query for stroke after fill
 		// in some cases. Simply skip fill query if we already have a matching
 		// stroke.
-		if (!(loc && loc._distance <= radius) && options.fill
-				&& this.hasFill() && this.contains(point))
-			return new HitResult('fill', this);
-		// Now query stroke if we haven't already
-		if (!loc && options.stroke && radius > 0)
-			loc = this.getNearestLocation(point);
-		if (loc && loc._distance <= radius)
-			// TODO: Do we need to transform the location back to the coordinate
-			// system of the DOM level on which the inquiry was started?
-			return options.stroke
+		return !loc && options.fill && this.hasFill() && this.contains(point)
+				? new HitResult('fill', this)
+				: loc
+					// TODO: Do we need to transform loc back to the coordinate
+					// system of the DOM level on which the inquiry was started?
 					? new HitResult('stroke', this, { location: loc })
-					: new HitResult('fill', this);
+					: null;
 	}
 
 	// TODO: intersects(item)
@@ -1812,13 +1903,12 @@ var Path = PathItem.extend(/** @lends Path# */{
 
 	return {
 		_draw: function(ctx, param) {
-			if (!param.compound)
+			var clip = param.clip,
+				compound = param.compound;
+			if (!compound)
 				ctx.beginPath();
 
-			// We can access styles directly on the internal _styles object,
-			// since Path items do not have children, thus do not need style
-			// accessors for merged styles.
-			var style = this._style,
+			var style = this.getStyle(),
 				fillColor = style.getFillColor(),
 				strokeColor = style.getStrokeColor(),
 				dashArray = style.getDashArray(),
@@ -1827,14 +1917,13 @@ var Path = PathItem.extend(/** @lends Path# */{
 
 			// Prepare the canvas path if we have any situation that requires it
 			// to be defined.
-			if (fillColor || strokeColor && !drawDash || param.compound
-					|| param.clip)
+			if (fillColor || strokeColor && !drawDash || compound || clip)
 				drawSegments(ctx, this);
 
 			if (this._closed)
 				ctx.closePath();
 
-			if (!param.clip && !param.compound && (fillColor || strokeColor)) {
+			if (!clip && !compound && (fillColor || strokeColor)) {
 				// If the path is part of a compound path or doesn't have a fill
 				// or stroke, there is no need to continue.
 				this._setStyles(ctx);
@@ -2202,7 +2291,8 @@ var Path = PathItem.extend(/** @lends Path# */{
 	_getBounds: function(getter, matrix) {
 		// See #draw() for an explanation of why we can access _style
 		// properties directly here:
-		return Path[getter](this._segments, this._closed, this._style, matrix);
+		return Path[getter](this._segments, this._closed, this.getStyle(),
+				matrix);
 	},
 
 // Mess with indentation in order to get more line-space below...
@@ -2215,12 +2305,14 @@ statics: {
 	 */
 	isClockwise: function(segments) {
 		var sum = 0,
-			xPre, yPre;
+			xPre, yPre,
+			add = false;
 		function edge(x, y) {
-			if (xPre !== undefined)
+			if (add)
 				sum += (xPre - x) * (y + yPre);
 			xPre = x;
 			yPre = y;
+			add = true;
 		}
 		// Method derived from:
 		// http://stackoverflow.com/questions/1165647
@@ -2343,16 +2435,7 @@ statics: {
 			bounds = Path.getBounds(segments, closed, style, matrix, padding),
 			join = style.getStrokeJoin(),
 			cap = style.getStrokeCap(),
-			miterLimit,
-			miterRadius;
-		if (join == 'miter' && length > 1) {
-			// miter is relative to stroke width. Divide it by 2 since we're
-			// measuring half the distance below
-			miterLimit = style.getMiterLimit() * style.getStrokeWidth() / 2;
-			// Depending on the path's orientation, mitters are created towards
-			// one side or the other
-			miterRadius = radius * (Path.isClockwise(segments) ? 1 : -1);
-		}
+			miterLimit = radius * style.getMiterLimit();
 		// Create a rectangle of padding size, used for union with bounds
 		// further down
 		var joinBounds = new Rectangle(new Size(padding).multiply(2));
@@ -2362,13 +2445,6 @@ statics: {
 				? matrix._transformPoint(point, point) : point);
 		}
 
-		function addBevelJoin(curve, t) {
-			var point = curve.getPointAt(t, true),
-				normal = curve.getNormalAt(t, true).normalize(radius);
-			add(point.add(normal));
-			add(point.subtract(normal));
-		}
-
 		function addJoin(segment, join) {
 			// When both handles are set in a segment, the join setting is
 			// ignored and round is always used.
@@ -2376,48 +2452,19 @@ statics: {
 					&& !segment._handleOut.isZero()) {
 				bounds = bounds.unite(joinBounds.setCenter(matrix
 					? matrix._transformPoint(segment._point) : segment._point));
-			} else if (join === 'bevel') {
-				var curve = segment.getCurve();
-				addBevelJoin(curve, 0);
-				addBevelJoin(curve.getPrevious(), 1);
-			} else if (join === 'miter') {
-				var curve2 = segment.getCurve(),
-					curve1 = curve2.getPrevious(),
-					point = curve2.getPointAt(0, true),
-					normal1 = curve1.getNormalAt(1, true).normalize(miterRadius),
-					normal2 = curve2.getNormalAt(0, true).normalize(miterRadius),
-					// Intersect the two lines
-					line1 = new Line(point.add(normal1),
-							new Point(-normal1.y, normal1.x), true),
-					line2 = new Line(point.add(normal2),
-							new Point(-normal2.y, normal2.x), true),
-					corner = line1.intersect(line2, true);
-				// Now measure the distance from the segment to the
-				// intersection, which his half of the miter distance
-				if (!corner || point.getDistance(corner) > miterLimit) {
-					addJoin(segment, 'bevel');
-				} else {
-					add(corner);
-				}
+			} else {
+				Path._addSquareJoin(segment, join, radius, miterLimit, add);
 			}
 		}
 
-		function addCap(segment, cap, t) {
+		function addCap(segment, cap) {
 			switch (cap) {
 			case 'round':
-				return addJoin(segment, cap);
+				addJoin(segment, cap);
+				break;
 			case 'butt':
 			case 'square':
-				// Calculate the corner points of butt and square caps
-				var curve = segment.getCurve(),
-					point = curve.getPointAt(t, true),
-					normal = curve.getNormalAt(t, true).normalize(radius);
-				// For square caps, we need to step away from point in the
-				// direction of the tangent, which is the rotated normal
-				if (cap === 'square')
-					point = point.add(normal.rotate(t == 0 ? -90 : 90));
-				add(point.add(normal));
-				add(point.subtract(normal));
+				Path._addSquareCap(segment, cap, radius, add); 
 				break;
 			}
 		}
@@ -2427,10 +2474,67 @@ statics: {
 		if (closed) {
 			addJoin(segments[0], join);
 		} else {
-			addCap(segments[0], cap, 0);
-			addCap(segments[segments.length - 1], cap, 1);
+			addCap(segments[0], cap);
+			addCap(segments[segments.length - 1], cap);
 		}
 		return bounds;
+	},
+
+	_addSquareJoin: function(segment, join, radius, miterLimit, addPoint, area) {
+		// Treat bevel and miter in one go, since they share a lot of code.
+		var curve2 = segment.getCurve(),
+			curve1 = curve2.getPrevious(),
+			point = curve2.getPointAt(0, true),
+			normal1 = curve1.getNormalAt(1, true),
+			normal2 = curve2.getNormalAt(0, true),
+			step = normal1.getDirectedAngle(normal2) < 0 ? -radius : radius;
+		normal1.setLength(step);
+		normal2.setLength(step);
+		if (area) {
+			addPoint(point);
+			addPoint(point.add(normal1));
+		}
+		if (join === 'miter') {
+			// Intersect the two lines
+			var corner = new Line(
+					point.add(normal1),
+					new Point(-normal1.y, normal1.x), true
+				).intersect(new Line(
+					point.add(normal2),
+					new Point(-normal2.y, normal2.x), true
+				), true);
+			// See if we actually get a bevel point and if its distance is below
+			// the miterLimit. If not, make a normal bevel.
+			if (corner && point.getDistance(corner) <= miterLimit) {
+				addPoint(corner);
+				if (!area)
+					return;
+			}
+		}
+		// Produce a normal bevel
+		if (!area)
+			addPoint(point.add(normal1));
+		addPoint(point.add(normal2));
+	},
+
+	_addSquareCap: function(segment, cap, radius, addPoint, area) {
+		// Calculate the corner points of butt and square caps
+		var point = segment._point,
+			loc = segment.getLocation(),
+			normal = loc.getNormal().normalize(radius);
+		if (area) {
+			addPoint(point.subtract(normal));
+			addPoint(point.add(normal));
+		}
+		// For square caps, we need to step away from point in the direction of
+		// the tangent, which is the rotated normal.
+		// Checking loc.getParameter() for 0 is to see wether this is the first
+		// or the last segment of the open path, in order to determine in which
+		// direction to move the point.
+		if (cap === 'square')
+			point = point.add(normal.rotate(loc.getParameter() == 0 ? -90 : 90));
+		addPoint(point.add(normal));
+		addPoint(point.subtract(normal));
 	},
 
 	/**
@@ -2478,11 +2582,15 @@ statics: {
 		// Delegate to handleBounds, but pass on radius values for stroke and
 		// joins. Hanlde miter joins specially, by passing the largets radius
 		// possible.
-		var strokeWidth = style.getStrokeColor() ? style.getStrokeWidth() : 0;
+		var strokeWidth = style.getStrokeColor() ? style.getStrokeWidth() : 0,
+			joinWidth = strokeWidth;
+		if (strokeWidth > 0) {
+			if (style.getStrokeJoin() === 'miter')
+				joinWidth = strokeWidth * style.getMiterLimit();
+			if (style.getStrokeCap() === 'square')
+				joinWidth = Math.max(joinWidth, strokeWidth * Math.sqrt(2));
+		}
 		return Path.getHandleBounds(segments, closed, style, matrix,
-				strokeWidth,
-				style.getStrokeJoin() == 'miter'
-					? strokeWidth * style.getMiterLimit()
-					: strokeWidth);
+				strokeWidth, joinWidth);
 	}
 }});

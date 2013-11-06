@@ -98,7 +98,8 @@ var Group = Item.extend(/** @lends Group# */{
 
 	_changed: function _changed(flags) {
 		_changed.base.call(this, flags);
-		if (flags & /*#=*/ ChangeFlag.HIERARCHY && !this._matrix.isIdentity()) {
+		if (flags & /*#=*/ ChangeFlag.HIERARCHY && this._transformContent
+				&& !this._matrix.isIdentity()) {
 			// Apply matrix now that we have content.
 			this.applyMatrix();
 		}
@@ -121,6 +122,24 @@ var Group = Item.extend(/** @lends Group# */{
 		// Make sure we're setting _clipItem to null so it won't be searched for
 		// nex time.
 		return this._clipItem = null;
+	},
+
+	/**
+	 * Specifies whether the group applies transformations directly to its
+	 * children, or wether they are to be stored in its {@link Item#matrix}
+	 *
+	 * @type Boolean
+	 * @default true
+	 * @bean
+	 */
+	getTransformContent: function() {
+		return this._transformContent;
+	},
+
+	setTransformContent: function(transform) {
+		this._transformContent = transform;
+		if (transform)
+			this.applyMatrix();
 	},
 
 	/**
@@ -167,16 +186,14 @@ var Group = Item.extend(/** @lends Group# */{
 	},
 
 	_draw: function(ctx, param) {
-		var clipItem = this._getClipItem();
-		if (clipItem) {
-			param.clip = true;
-			clipItem.draw(ctx, param);
-			param.clip = false;
-		}
+		var clipItem = param.clipItem = this._getClipItem();
+		if (clipItem)
+			clipItem.draw(ctx, param.extend({ clip: true }));
 		for (var i = 0, l = this._children.length; i < l; i++) {
 			var item = this._children[i];
 			if (item !== clipItem)
 				item.draw(ctx, param);
 		}
+		param.clipItem = null;
 	}
 });

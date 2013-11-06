@@ -39,6 +39,22 @@ test('Path#contains() (Regular Polygon)', function() {
 	testPoint(path, new Point(10, 20), false);
 });
 
+test('Path#contains() (Round Rectangle)', function() {
+	var rectangle = new Rectangle({
+	    point: new Point(0, 0),
+	    size: new Size(200, 40)
+	});
+	var path = new Path.Rectangle(rectangle, new Size(20, 20));
+	testPoint(path, new Point(100, 20), true);
+});
+
+test('Path#contains() (Open Circle)', function() {
+	var path = new Path.Circle([100, 100], 100);
+	path.closed = false;
+	path.fillColor = '#ff0000';
+	testPoint(path, new Point(40, 160), false);
+});
+
 test('CompoundPath#contains() (Donut)', function() {
 	var path = new CompoundPath([
 		new Path.Circle([0, 0], 50),

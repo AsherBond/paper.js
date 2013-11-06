@@ -18,7 +18,7 @@
  * @extends Item
  */
 var Shape = Item.extend(/** @lends Shape# */{
-	_applyMatrix: false,
+	_transformContent: false,
 
 	initialize: function Shape(type, point, size) {
 		Item.call(this, point);
@@ -44,16 +44,17 @@ var Shape = Item.extend(/** @lends Shape# */{
 				ctx.arc(0, 0, (width + height) / 4, 0, Math.PI * 2, true);
 				break;
 			case 'ellipse':
+				// Use four bezier curves and KAPPA value to aproximate ellipse
 				var mx = width / 2,
 					my = height / 2,
 					kappa = Numerical.KAPPA,
 					cx = mx * kappa,
 					cy = my * kappa;
-				ctx.moveTo(0, my);
-				ctx.bezierCurveTo(0, my - cy, mx - cx, 0, mx, 0);
-				ctx.bezierCurveTo(mx + cx, 0, width, my - cy, width, my);
-				ctx.bezierCurveTo(width, my + cy, mx + cx, height, mx, height);
-				ctx.bezierCurveTo(mx - cx, height, 0, my + cy, 0, my);
+				ctx.moveTo(-mx, 0);
+				ctx.bezierCurveTo(-mx, -cy, -cx, -my, 0, -my);
+				ctx.bezierCurveTo(cx, -my, mx, -cy, mx, 0);
+				ctx.bezierCurveTo(mx, cy, cx, my, 0, my);
+				ctx.bezierCurveTo(-cx, my, -mx, cy, -mx, 0);
 				break;
 			}
 		}
@@ -66,6 +67,19 @@ var Shape = Item.extend(/** @lends Shape# */{
 		}
 	},
 
+	_canComposite: function() {
+		// A path with only a fill  or a stroke can be directly blended, but if
+		// it has both, it needs to be drawn into a separate canvas first.
+		return !(this.hasFill() && this.hasStroke());
+	},
+
+	_getBounds: function(getter, matrix) {
+		var rect = new Rectangle(this._size).setCenter(0, 0);
+		if (getter !== 'getBounds' && this.hasStroke())
+			rect = rect.expand(this.getStrokeWidth());
+		return matrix ? matrix._transformBounds(rect) : rect;
+	},
+
 	_contains: function _contains(point) {
 		switch (this._type) {
 		case 'rect':
@@ -76,33 +90,70 @@ var Shape = Item.extend(/** @lends Shape# */{
 		}
 	},
 
-	_getBounds: function(getter, matrix) {
-		var rect = new Rectangle(this._size).setCenter(0, 0);
-		return matrix ? matrix._transformBounds(rect) : rect;
-	},
-
-	_hitTest: function(point, options) {
-		if (this.hasFill() && this.contains(point))
-			return new HitResult('fill', this);
-		// TODO: Implement stroke!
-	},
-
-	statics: {
-		Circle: function(/* center, radius */) {
-			var center = Point.readNamed(arguments, 'center'),
-				radius = Base.readNamed(arguments, 'radius');
-			return new Shape('circle', center, new Size(radius * 2));
-		},
-
-		Rectangle: function(/* rectangle */) {
-			var rect = Rectangle.readNamed(arguments, 'rectangle');
-			return new Shape('rect', rect.getCenter(true), rect.getSize(true));
-		},
-
-		Ellipse: function(/* rectangle */) {
-			var rect = Rectangle.readNamed(arguments, 'rectangle');
-			return new Shape('ellipse', rect.getCenter(true),
-					rect.getSize(true));
+	_hitTest: function _hitTest(point, options) {
+		if (this.hasStroke()) {
+			var type = this._type,
+				strokeWidth = this.getStrokeWidth();
+			switch (type) {
+			case 'rect':
+				var rect = new Rectangle(this._size).setCenter(0, 0),
+					outer = rect.expand(strokeWidth),
+					inner = rect.expand(-strokeWidth);
+				if (outer._containsPoint(point) && !inner._containsPoint(point))
+					return new HitResult('stroke', this);
+				break;
+			case 'circle':
+			case 'ellipse':
+				var size = this._size,
+					width = size.width,
+					height = size.height,
+					radius;
+				if (type === 'ellipse') {
+					// Calculate ellipse radius at angle
+					var angle = point.getAngleInRadians(),
+						x = width * Math.sin(angle),
+						y = height * Math.cos(angle);
+					radius = width * height / (2 * Math.sqrt(x * x + y * y));
+				} else {
+					// Average half of width & height for radius...
+					radius = (width + height) / 4;
+				}
+				if (2 * Math.abs(point.getLength() - radius) <= strokeWidth)
+					return new HitResult('stroke', this);
+				break;
+			}
 		}
+		return _hitTest.base.apply(this, arguments);
+	},
+
+	statics: new function() {
+		function createShape(type, point, size, args) {
+			var shape = new Shape(type, point, size),
+				named = Base.getNamed(args);
+			if (named)
+				shape._set(named);
+			return shape;
+		}
+
+		return {
+			Circle: function(/* center, radius */) {
+				var center = Point.readNamed(arguments, 'center'),
+					radius = Base.readNamed(arguments, 'radius');
+				return createShape('circle', center, new Size(radius * 2),
+						arguments);
+			},
+
+			Rectangle: function(/* rectangle */) {
+				var rect = Rectangle.readNamed(arguments, 'rectangle');
+				return createShape('rect', rect.getCenter(true),
+						rect.getSize(true), arguments);
+			},
+
+			Ellipse: function(/* rectangle */) {
+				var rect = Rectangle.readNamed(arguments, 'rectangle');
+				return createShape('ellipse', rect.getCenter(true),
+						rect.getSize(true), arguments);
+			}
+		};
 	}
 });

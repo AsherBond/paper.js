@@ -43,7 +43,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 
 	// All items apply their matrix by default.
 	// Exceptions are Raster, PlacedSymbol, Clip and Shape.
-	_applyMatrix: true,
+	_transformContent: true,
 	_boundsSelected: false,
 	// Provide information about fields to be serialized, with their defaults
 	// that can be ommited.
@@ -72,8 +72,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			else
 				this._setProject(project);
 		}
-		this._style = new Style(this._project._currentStyle);
-		this._style._item = this;
+		this._style = new Style(this._project._currentStyle, this);
 		this._matrix = new Matrix();
 		if (point)
 			this._matrix.translate(point);
@@ -382,11 +381,18 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	},
 
 	setStyle: function(style) {
-		this._style.initialize(style);
+		// Don't access _style directly so Path#getStyle() can be overriden for
+		// CompoundPaths.
+		this.getStyle().set(style);
 	},
 
 	hasFill: function() {
-		return !!this._style.getFillColor();
+		return !!this.getStyle().getFillColor();
+	},
+
+	hasStroke: function() {
+		var style = this.getStyle();
+		return !!style.getStrokeColor() && style.getStrokeWidth() > 0;
 	}
 }, Base.each(['locked', 'visible', 'blendMode', 'opacity', 'guide'],
 	// Produce getter/setters for properties. We need setters because we want to
@@ -1270,7 +1276,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			matrix = new Matrix().scale(scale).translate(-bounds.x, -bounds.y);
 		ctx.save();
 		matrix.applyToContext(ctx);
-		this.draw(ctx, { transforms: [matrix] });
+		// See Project#draw() for an explanation of Base.merge()
+		this.draw(ctx, Base.merge({ transforms: [matrix] }));
 		var raster = new Raster(canvas);
 		raster.setBounds(bounds);
 		ctx.restore();
@@ -1322,6 +1329,10 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		}
 		// We only implement it here for items with rectangular content,
 		// for anything else we need to override #contains()
+		// TODO: There currently is no caching for the results of direct calls
+		// to this._getBounds('getBounds') (without the application of the
+		// internal matrix). Performance improvements could be achieved if
+		// these were cached too. See #_getCachedBounds().
 		return point.isInside(this._getBounds('getBounds'));
 	},
 
@@ -1420,6 +1431,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 				var res = this._children[i].hitTest(point, options);
 				if (res) return res;
 			}
+		} else if (this.hasFill() && this._contains(point)) {
+			return new HitResult('fill', this);
 		}
 	},
 
@@ -2012,6 +2025,17 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 * circle.fillColor = new Color(1, 0, 0);
 	 */
 
+	/**
+	 * {@grouptitle Selection Style}
+	 *
+	 * The color the item is highlighted with when selected. If the item does
+	 * not specify its own color, the color defined by its layer is used instead.
+	 *
+	 * @name Item#selectedColor
+	 * @property
+	 * @type Color
+	 */
+
 	// DOCS: Document the different arguments that this function can receive.
 	/**
 	 * {@grouptitle Transform Functions}
@@ -2195,8 +2219,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		this._matrix.preConcatenate(matrix);
 		// Call applyMatrix if we need to directly apply the accumulated
 		// transformations to the item's content.
-		if (this._applyMatrix || arguments[1])
-			this.applyMatrix(false);
+		if (this._transformContent || arguments[1])
+			this.applyMatrix(true);
 		// We always need to call _changed since we're caching bounds on all
 		// items, including Group.
 		this._changed(/*#=*/ Change.GEOMETRY);
@@ -2226,7 +2250,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		return this;
 	},
 
-	_transformContent: function(matrix, applyMatrix) {
+	_applyMatrix: function(matrix, applyMatrix) {
 		var children = this._children;
 		if (children && children.length > 0) {
 			for (var i = 0, l = children.length; i < l; i++)
@@ -2236,14 +2260,14 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	},
 
 	applyMatrix: function(_dontNotify) {
-		// Call #_transformContent() with the internal _matrix and pass true for
+		// Call #_applyMatrix() with the internal _matrix and pass true for
 		// applyMatrix. Application is not possible on Raster, PointText,
 		// PlacedSymbol, since the matrix is where the actual location /
 		// transformation state is stored.
 		// Pass on the transformation to the content, and apply it there too,
 		// by passing true for the 2nd hidden parameter.
 		var matrix = this._matrix;
-		if (this._transformContent(matrix, true)) {
+		if (this._applyMatrix(matrix, true)) {
 			// When the matrix could be applied, we also need to transform
 			// color styles with matrices (only gradients so far):
 			var style = this._style,
@@ -2834,11 +2858,6 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 				}
 			}
 		}
-		// If the item only defines a strokeColor or a fillColor, draw it
-		// directly with the globalAlpha set, otherwise we will do it later when
-		// we composite the temporary canvas.
-		if (!fillColor || !strokeColor)
-			ctx.globalAlpha = this._opacity;
 	},
 
 	// TODO: Implement View into the drawing.
@@ -2866,65 +2885,74 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		// over their fill.
 		// Exclude Raster items since they never draw a stroke and handle
 		// opacity by themselves (they also don't call _setStyles)
-		var parentCtx, itemOffset, prevOffset;
-		if (this._blendMode !== 'normal' || this._opacity < 1
-				&& this._type !== 'raster' && (this._type !== 'path'
-					|| this.getFillColor() && this.getStrokeColor())) {
+		var blendMode = this._blendMode,
+			opacity = this._opacity,
+			type = this._type,
+			nativeBlend = BlendMode.nativeModes[blendMode],
+			// Determine if we can draw directly, or if we need to draw into a
+			// separate canvas and then composite onto the main canvas.
+			direct = blendMode === 'normal' && opacity === 1
+					// If native blending is possible, see if the item allows it
+					|| (nativeBlend || opacity < 1) && this._canComposite(),
+			mainCtx, itemOffset, prevOffset;
+		if (!direct) {
 			// Apply the paren't global matrix to the calculation of correct
 			// bounds.
 			var bounds = this.getStrokeBounds(parentMatrix);
 			if (!bounds.width || !bounds.height)
 				return;
-			// Store previous offset and save the parent context, so we can
-			// draw onto it later
+			// Store previous offset and save the main context, so we can
+			// draw onto it later.
 			prevOffset = param.offset;
 			// Floor the offset and ceil the size, so we don't cut off any
 			// antialiased pixels when drawing onto the temporary canvas.
 			itemOffset = param.offset = bounds.getTopLeft().floor();
-			// Set ctx to the context of the temporary canvas,
-			// so we draw onto it, instead of the parentCtx
-			parentCtx = ctx;
+			// Set ctx to the context of the temporary canvas, so we draw onto
+			// it, instead of the mainCtx.
+			mainCtx = ctx;
 			ctx = CanvasProvider.getContext(
 					bounds.getSize().ceil().add(new Size(1, 1)));
 		}
 		ctx.save();
-		// Translate the context so the topLeft of the item is at (0, 0)
-		// on the temporary canvas.
-		if (parentCtx)
+		// If drawing directly, handle opacity and native blending now,
+		// otherwise we will do it later when the temporary canvas is composited.
+		if (direct) {
+			ctx.globalAlpha = opacity;
+			if (nativeBlend)
+				ctx.globalCompositeOperation = blendMode;
+		} else {
+			// Translate the context so the topLeft of the item is at (0, 0)
+			// on the temporary canvas.
 			ctx.translate(-itemOffset.x, -itemOffset.y);
-		// Apply globalMatrix when blitting into temporary canvas.
-		(parentCtx ? globalMatrix : this._matrix).applyToContext(ctx);
+		}
+		// Apply globalMatrix when drawing into temporary canvas.
+		(direct ? this._matrix : globalMatrix).applyToContext(ctx);
+		// If we're drawing into a separate canvas and a clipItem is defined for
+		// the current rendering loop, we need to draw the clip item again.
+		if (!direct && param.clipItem)
+			param.clipItem.draw(ctx, param.extend({ clip: true }));
 		this._draw(ctx, param);
 		ctx.restore();
 		transforms.pop();
 		if (param.clip)
 			ctx.clip();
-		// If a temporary canvas was created before, composite it onto the
-		// parent canvas:
-		if (parentCtx) {
-			// Restore previous offset.
-			param.offset = prevOffset;
-			// If the item has a blendMode, use BlendMode#process to
-			// composite its canvas on the parentCanvas.
-			if (this._blendMode !== 'normal') {
-				// The pixel offset of the temporary canvas to the parent
-				// canvas.
-				BlendMode.process(this._blendMode, ctx, parentCtx,
-					this._opacity, itemOffset.subtract(prevOffset));
-			} else {
-				// Otherwise just set the globalAlpha before drawing the
-				// temporary canvas on the parent canvas.
-				parentCtx.save();
-				// Reset transformations, since we're blitting and pixel
-				// scale and with a given offset.
-				parentCtx.setTransform(1, 0, 0, 1, 0, 0);
-				parentCtx.globalAlpha = this._opacity;
-				parentCtx.drawImage(ctx.canvas, itemOffset.x, itemOffset.y);
-				parentCtx.restore();
-			}
+		// If a temporary canvas was created, composite it onto the main canvas:
+		if (!direct) {
+			// Use BlendMode.process even for processing normal blendMode with
+			// opacity.
+			BlendMode.process(blendMode, ctx, mainCtx, opacity,
+					// Calculate the pixel offset of the temporary canvas to the
+					// main canvas.
+					itemOffset.subtract(prevOffset));
 			// Return the temporary context, so it can be reused
 			CanvasProvider.release(ctx);
+			// Restore previous offset.
+			param.offset = prevOffset;
 		}
+	},
+
+	_canComposite: function() {
+		return false;
 	}
 }, Base.each(['down', 'drag', 'up', 'move'], function(name) {
 	this['removeOn' + Base.capitalize(name)] = function() {
@@ -3066,7 +3094,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		for (var name in obj) {
 			if (obj[name]) {
 				var key = 'mouse' + name,
-					sets = Tool._removeSets = Tool._removeSets || {};
+					project = this._project,
+					sets = project._removeSets = project._removeSets || {};
 				sets[key] = sets[key] || {};
 				sets[key][this._id] = this;
 			}

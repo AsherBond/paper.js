@@ -18,7 +18,7 @@
  * @extends Item
  */
 var Raster = Item.extend(/** @lends Raster# */{
-	_applyMatrix: false,
+	_transformContent: false,
 	// Raster doesn't make the distinction between the different bounds,
 	// so use the same name for all of them
 	_boundsGetter: 'getBounds',
@@ -412,8 +412,9 @@ var Raster = Item.extend(/** @lends Raster# */{
 				.translate(-bounds.x, -bounds.y);
 		matrix.applyToContext(ctx);
 		// If a path was passed, draw it as a clipping mask:
+		// See Project#draw() for an explanation of Base.merge()
 		if (path)
-			path.draw(ctx, { clip: true, transforms: [matrix] });
+			path.draw(ctx, Base.merge({ clip: true, transforms: [matrix] }));
 		// Now draw the image clipped into it.
 		this._matrix.applyToContext(ctx);
 		ctx.drawImage(this.getElement(),
@@ -507,7 +508,7 @@ var Raster = Item.extend(/** @lends Raster# */{
 		return this.getContext().createImageData(size.width, size.height);
 	},
 
-	// DOCS: document Raster#getData
+	// DOCS: document Raster#getImageData
 	/**
 	 * @param {Rectangle} rect
 	 * @return {ImageData}
@@ -560,5 +561,9 @@ var Raster = Item.extend(/** @lends Raster# */{
 			ctx.drawImage(element,
 					-this._size.width / 2, -this._size.height / 2);
 		}
+	},
+
+	_canComposite: function() {
+		return true;
 	}
 });

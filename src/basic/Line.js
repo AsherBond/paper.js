@@ -66,6 +66,16 @@ var Line = Base.extend(/** @lends Line# */{
 	},
 
 	/**
+	 * The length of the line
+	 *
+	 * @name Line#length
+	 * @type Number
+	 */
+	getLength: function() {
+		return this.getVector().getLength();
+	},
+
+	/**
 	 * @param {Line} line
 	 * @param {Boolean} [isInfinite=false]
 	 * @return {Point} the intersection point of the lines, {@code undefined}

@@ -291,77 +291,6 @@ var Curve = Base.extend(/** @lends Curve# */{
 				this, curve, []);
 	},
 
-	getCrossings: function(point, roots) {
-		// Implementation of the crossing number algorithm:
-		// http://en.wikipedia.org/wiki/Point_in_polygon
-		// Solve the y-axis cubic polynomial for point.y and count all solutions
-		// to the right of point.x as crossings.
-		var vals = this.getValues(),
-			count = Curve.solveCubic(vals, 1, point.y, roots),
-			crossings = 0,
-			tolerance = /*#=*/ Numerical.TOLERANCE,
-			abs = Math.abs;
-
-		// Checks the y-slope between the current curve and the previous for a
-		// change of orientation, when a solution is found at t == 0
-		function changesOrientation(curve, tangent) {
-			return Curve.evaluate(curve.getPrevious().getValues(), 1, true, 1).y
-					* tangent.y > 0;
-		}
-
-		// TODO: See if this speeds up code, or slows it down:
-		// var bounds = this.getBounds();
-		// if (point.y < bounds.getTop() || point.y > bounds.getBottom()
-		// 		|| point.x > bounds.getRight())
-		// 	return 0;
-
-		if (count === -1) {
-			// Infinite solutions, so we have a horizontal curve.
-			// Find parameter through getParameterOf()
-			roots[0] = Curve.getParameterOf(vals, point.x, point.y);
-			count = roots[0] !== null ? 1 : 0;
-		}
-		for (var i = 0; i < count; i++) {
-			var t = roots[i];
-			if (t > -tolerance && t < 1 - tolerance) {
-				var pt = Curve.evaluate(vals, t, true, 0);
-				if (point.x < pt.x + tolerance) {
-					// Passing 1 for Curve.evaluate() type calculates tangents
-					var tan = Curve.evaluate(vals, t, true, 1);
-					// Handle all kind of edge cases when points are on contours
-					// or rays are touching countours, to termine wether the
-					// crossing counts or not.
-					// See if the actual point is on the countour:
-					if (abs(pt.x - point.x) < tolerance) {
-						// Do not count the crossing if it is on the left hand
-						// side of the shape (tangent pointing upwards), since
-						// the ray will go out the other end, count as
-						// crossing there, and the point is on the contour, so
-						// to be considered inside.
-						var angle = tan.getAngle();
-						if (angle > -180 && angle < 0
-							// Handle special case where point is on a corner,
-							// in which case this crossing is skipped if both
-							// tangents have the same orientation.
-							&& (t > tolerance || changesOrientation(this, tan)))
-								continue;
-					} else  {
-						// Skip touching stationary points:
-						if (abs(tan.y) < tolerance
-							// Check derivate for stationary points. If root is
-							// close to 0 and not changing vertical orientation
-							// from the previous curve, do not count this root,
-							// as it's touching a corner.
-							|| t < tolerance && !changesOrientation(this, tan))
-								continue;
-					}
-					crossings++;
-				}
-			}
-		}
-		return crossings;
-	},
-
 	// TODO: adjustThroughPoint
 
 	/**
@@ -515,14 +444,14 @@ statics: {
 				cy = 3 * (c1y - p1y),
 				by = 3 * (c2y - c1y) - cy,
 				ay = p2y - p1y - cy - by;
-			switch (type) {
-			case 0: // point
+			if (type === 0) {
 				// Calculate the curve point at parameter value t
 				x = ((ax * t + bx) * t + cx) * t + p1x;
 				y = ((ay * t + by) * t + cy) * t + p1y;
-				break;
-			case 1: // tangent, 1st derivative
-			case 2: // normal, 1st derivative
+			} else {
+				// 1: tangent, 1st derivative
+				// 2: normal, 1st derivative
+				// 3: curvature, 1st derivative & 2nd derivative
 				// Prevent tangents and normals of length 0:
 				// http://stackoverflow.com/questions/10506868/
 				var tMin = /*#=*/ Numerical.TOLERANCE;
@@ -536,11 +465,14 @@ statics: {
 					x = (3 * ax * t + 2 * bx) * t + cx;
 					y = (3 * ay * t + 2 * by) * t + cy;
 				}
-				break;
-			case 3: // curvature, 2nd derivative
-				x = 6 * ax * t + 2 * bx;
-				y = 6 * ay * t + 2 * by;
-				break;
+				if (type === 3) {
+					// Calculate 2nd derivative, and curvature from there:
+					// http://cagd.cs.byu.edu/~557/text/ch2.pdf page#31
+					// k = |dx * d2y - dy * d2x| / (( dx^2 + dy^2 )^(3/2))
+					var x2 = 6 * ax * t + 2 * bx,
+						y2 = 6 * ay * t + 2 * by;
+					return (x * y2 - y * x2) / Math.pow(x * x + y * y, 3 / 2);
+				}
 			}
 		}
 		// The normal is simply the rotated tangent:
@@ -655,6 +587,20 @@ statics: {
 				< 10 * tolerance * tolerance;
 	},
 
+	getArea: function(v) {
+		var p1x = v[0], p1y = v[1],
+			c1x = v[2], c1y = v[3],
+			c2x = v[4], c2y = v[5],
+			p2x = v[6], p2y = v[7];
+		// http://objectmix.com/graphics/133553-area-closed-bezier-curve.html
+		return (  3.0 * c1y * p1x - 1.5 * c1y * c2x
+				- 1.5 * c1y * p2x - 3.0 * p1y * c1x
+				- 1.5 * p1y * c2x - 0.5 * p1y * p2x
+				+ 1.5 * c2y * p1x + 1.5 * c2y * c1x
+				- 3.0 * c2y * p2x + 0.5 * p2y * p1x
+				+ 1.5 * p2y * c1x + 3.0 * p2y * c2x) / 10;
+	},
+
 	getBounds: function(v) {
 		var min = v.slice(0, 2), // Start with values of point1
 			max = min.slice(), // clone
@@ -663,6 +609,70 @@ statics: {
 			Curve._addBounds(v[i], v[i + 2], v[i + 4], v[i + 6],
 					i, 0, min, max, roots);
 		return new Rectangle(min[0], min[1], max[0] - min[0], max[1] - min[1]);
+	},
+
+	_getCrossings: function(v, prev, x, y, roots) {
+		// Implementation of the crossing number algorithm:
+		// http://en.wikipedia.org/wiki/Point_in_polygon
+		// Solve the y-axis cubic polynomial for y and count all solutions
+		// to the right of x as crossings.
+		var count = Curve.solveCubic(v, 1, y, roots),
+			crossings = 0,
+			tolerance = /*#=*/ Numerical.TOLERANCE,
+			abs = Math.abs;
+
+		// Checks the y-slope between the current curve and the previous for a
+		// change of orientation, when a solution is found at t == 0
+		function changesOrientation(tangent) {
+			return Curve.evaluate(prev, 1, true, 1).y
+					* tangent.y > 0;
+		}
+
+		if (count === -1) {
+			// Infinite solutions, so we have a horizontal curve.
+			// Find parameter through getParameterOf()
+			roots[0] = Curve.getParameterOf(v, x, y);
+			count = roots[0] !== null ? 1 : 0;
+		}
+		for (var i = 0; i < count; i++) {
+			var t = roots[i];
+			if (t > -tolerance && t < 1 - tolerance) {
+				var pt = Curve.evaluate(v, t, true, 0);
+				if (x < pt.x + tolerance) {
+					// Pass 1 for Curve.evaluate() type to calculate tangent
+					var tan = Curve.evaluate(v, t, true, 1);
+					// Handle all kind of edge cases when points are on
+					// contours or rays are touching countours, to termine
+					// wether the crossing counts or not.
+					// See if the actual point is on the countour:
+					if (abs(pt.x - x) < tolerance) {
+						// Do not count the crossing if it is on the left hand
+						// side of the shape (tangent pointing upwards), since
+						// the ray will go out the other end, count as crossing
+						// there, and the point is on the contour, so to be
+						// considered inside.
+						var angle = tan.getAngle();
+						if (angle > -180 && angle < 0
+							// Handle special case where point is on a corner,
+							// in which case this crossing is skipped if both
+							// tangents have the same orientation.
+							&& (t > tolerance || changesOrientation(tan)))
+								continue;
+					} else  {
+						// Skip touching stationary points:
+						if (abs(tan.y) < tolerance
+							// Check derivate for stationary points. If root is
+							// close to 0 and not changing vertical orientation
+							// from the previous curve, do not count this root,
+							// as it's touching a corner.
+							|| t < tolerance && !changesOrientation(tan))
+								continue;
+					}
+					crossings++;
+				}
+			}
+		}
+		return crossings;
 	},
 
 	/**
@@ -724,8 +734,8 @@ statics: {
 			if (!bounds) {
 				// Calculate the curve bounds by passing a segment list for the
 				// curve to the static Path.get*Boudns methods.
-				bounds = this._bounds[name] = Path[name](
-					[this._segment1, this._segment2], false, this._path._style);
+				bounds = this._bounds[name] = Path[name]([this._segment1,
+						this._segment2], false, this._path.getStyle());
 			}
 			return bounds.clone();
 		};
@@ -764,7 +774,7 @@ statics: {
 	 * @bean
 	 * @ignore
 	 */
-}), Base.each(['getPoint', 'getTangent', 'getNormal', 'getCurvature'],
+}), Base.each(['getPoint', 'getTangent', 'getNormal', 'getCurvatureAt'],
 	// Note: Although Curve.getBounds() exists, we are using Path.getBounds() to
 	// determine the bounds of Curve objects with defined segment1 and segment2
 	// values Curve.getBounds() can be used directly on curve arrays, without
@@ -836,11 +846,11 @@ statics: {
 	getNearestLocation: function(point) {
 		point = Point.read(arguments);
 		var values = this.getValues(),
-			step = 1 / 100,
+			count = 100,
 			tolerance = Numerical.TOLERANCE,
 			minDist = Infinity,
 			minT = 0,
-			max = 1 + tolerance; // Accomodate imprecision
+			max = 1 + tolerance; // Accomodate imprecision in comparisson
 
 		function refine(t) {
 			if (t >= 0 && t <= 1) {
@@ -854,17 +864,17 @@ statics: {
 			}
 		}
 
-		for (var t = 0; t <= max; t += step)
-			refine(t);
+		for (var i = 0; i <= count; i++)
+			refine(i / count);
 
 		// Now iteratively refine solution until we reach desired precision.
-		step /= 2;
+		var step = 1 / (count * 2);
 		while (step > tolerance) {
 			if (!refine(minT - step) && !refine(minT + step))
 				step /= 2;
 		}
 		var pt = Curve.evaluate(values, minT, true, 0);
-		return new CurveLocation(this, minT, pt, null, null,
+		return new CurveLocation(this, minT, pt, null, null, null,
 				point.getDistance(pt));
 	},
 
@@ -910,6 +920,8 @@ statics: {
 
 	/**
 	 * Returns the curvature vector of the curve at the specified position.
+	 * Curvatures indicate how sharply a curve changes direction. A straight
+	 * line has zero curvature where as a circle has a constant curvature.
 	 *
 	 * @name Curve#getCurvatureAt
 	 * @function
@@ -961,7 +973,7 @@ new function() { // Scope for methods that require numerical integration
 				a = 0;
 			if (b === undefined)
 				b = 1;
-			// if (p1 == c1 && p2 == c2):
+			// See if the curve is linear by checking p1 == c1 and p2 == c2
 			if (v[0] == v[2] && v[1] == v[3] && v[6] == v[4] && v[7] == v[5]) {
 				// Straight line
 				var dx = v[6] - v[0], // p2x - p1x
@@ -970,20 +982,6 @@ new function() { // Scope for methods that require numerical integration
 			}
 			var ds = getLengthIntegrand(v);
 			return Numerical.integrate(ds, a, b, getIterations(a, b));
-		},
-
-		getArea: function(v) {
-			var p1x = v[0], p1y = v[1],
-				c1x = v[2], c1y = v[3],
-				c2x = v[4], c2y = v[5],
-				p2x = v[6], p2y = v[7];
-			// http://objectmix.com/graphics/133553-area-closed-bezier-curve.html
-			return (  3.0 * c1y * p1x - 1.5 * c1y * c2x
-					- 1.5 * c1y * p2x - 3.0 * p1y * c1x
-					- 1.5 * p1y * c2x - 0.5 * p1y * p2x
-					+ 1.5 * c2y * p1x + 1.5 * c2y * c1x
-					- 3.0 * c2y * p2x + 0.5 * p2y * p1x
-					+ 1.5 * p2y * c1x + 3.0 * p2y * c2x) / 10;
 		},
 
 		getParameterAt: function(v, offset, start) {
@@ -1025,13 +1023,14 @@ new function() { // Scope for methods that require numerical integration
 		}
 	};
 }, new function() { // Scope for intersection using bezier fat-line clipping
-	function addLocation(locations, curve1, t1, point, curve2, t2) {
+	function addLocation(locations, curve1, t1, point1, curve2, t2, point2) {
 		// Avoid duplicates when hitting segments (closed paths too)
 		var first = locations[0],
 			last = locations[locations.length - 1];
-		if ((!first || !point.equals(first._point))
-				&& (!last || !point.equals(last._point)))
-			locations.push(new CurveLocation(curve1, t1, point, curve2, t2));
+		if ((!first || !point1.equals(first._point))
+				&& (!last || !point1.equals(last._point)))
+			locations.push(
+					new CurveLocation(curve1, t1, point1, curve2, t2, point2));
 	}
 
 	function addCurveIntersections(v1, v2, curve1, curve2, locations,
@@ -1060,9 +1059,7 @@ new function() { // Scope for methods that require numerical integration
 		// degenerate case seperately, where fat-line clipping can become
 		// numerically unstable when one of the curves has converged to a point
 		// and the other hasn't.
-		while (iteration++ < 20
-				&& (Math.abs(range1[1] - range1[0]) > /*#=*/ Numerical.TOLERANCE
-				|| Math.abs(range2[1] - range2[0]) > /*#=*/ Numerical.TOLERANCE)) {
+		while (iteration++ < 20) {
 			// First we clip v2 with v1's fat-line
 			var range,
 				intersects1 = clipFatLine(part1, part2, range = range2.slice()),
@@ -1114,14 +1111,15 @@ new function() { // Scope for methods that require numerical integration
 				}
 			}
 			// We need to bailout of clipping and try a numerically stable
-			// method if both of the parameter ranges have converged reasonably well
-			//     (according to Numerical.TOLERANCE).
-			if (Math.abs(range1[1] - range1[0]) < /*#=*/ Numerical.TOLERANCE &&
-				Math.abs(range2[1] - range2[0]) < /*#=*/ Numerical.TOLERANCE) {
+			// method if both of the parameter ranges have converged reasonably
+			// well (according to Numerical.TOLERANCE).
+			if (Math.abs(range1[1] - range1[0]) <= /*#=*/ Numerical.TOLERANCE &&
+				Math.abs(range2[1] - range2[0]) <= /*#=*/ Numerical.TOLERANCE) {
 				var t1 = (range1[0] + range1[1]) / 2,
 					t2 = (range2[0] + range2[1]) / 2;
-				addLocation(locations, curve1, t1,
-						Curve.evaluate(v1, t1, true, 0), curve2, t2);
+				addLocation(locations,
+						curve1, t1, Curve.evaluate(v1, t1, true, 0),
+						curve2, t2, Curve.evaluate(v2, t2, true, 0));
 				break;
 			}
 		}
@@ -1325,10 +1323,9 @@ new function() { // Scope for methods that require numerical integration
 	 * line is on the X axis, and solve the implicit equations for the X axis
 	 * and the curve.
 	 */
-	function addCurveLineIntersections(v1, v2, curve1, curve2, locations, flip) {
-		if (flip === undefined)
-			flip = Curve.isLinear(v1);
-		var vc = flip ? v2 : v1,
+	function addCurveLineIntersections(v1, v2, curve1, curve2, locations) {
+		var flip = Curve.isLinear(v1),
+			vc = flip ? v2 : v1,
 			vl = flip ? v1 : v2,
 			l1x = vl[0], l1y = vl[1],
 			l2x = vl[6], l2y = vl[7],

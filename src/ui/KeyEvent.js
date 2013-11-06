@@ -21,6 +21,8 @@
  * @extends Event
  */
 var KeyEvent = Event.extend(/** @lends KeyEvent# */{
+	_class: 'KeyEvent',
+
 	initialize: function KeyEvent(down, key, character, event) {
 		Event.call(this, event);
 		this.type = down ? 'keydown' : 'keyup';
@@ -50,7 +52,7 @@ var KeyEvent = Event.extend(/** @lends KeyEvent# */{
 	 */
 
 	/**
-	 * @return {String} A string representation of the key event.
+	 * @return {String} a string representation of the key event
 	 */
 	toString: function() {
 		return "{ type: '" + this.type

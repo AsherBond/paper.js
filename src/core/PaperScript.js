@@ -14,32 +14,59 @@
  * @name PaperScript
  * @namespace
  */
-
-// Locally override define, so acorn.js does not export itself
-var define = null;
+// Note that due to the use of with(), PaperScript gets compiled outside the
+// main paper scope, and is added to the PaperScope class. This allows for
+// better minification and the future use of strict mode once it makes sense
+// in terms of performance.
+paper.PaperScope.prototype.PaperScript = (function(root) {
+	var Base = paper.Base,
+		PaperScope = paper.PaperScope,
+		// Locally turn of exports and define for inlined acorn / esprima.
+		// Just declaring the local vars is enough, as they will be undefined.
+		exports, define,
+		// The scope into which the library is loaded.
+		scope = this;
+/*#*/ if (options.version == 'dev') {
+	// As the above inclusion loads code into the root scope during dev,
+	// set scope to root, so we can find the library.
+	scope = root;
+/*#*/ } // options.version == 'dev'
 /*#*/ if (options.parser == 'acorn') {
-/*#*/ include('../../lib/acorn-min.js');
+/*#*/ include('../../bower_components/acorn/acorn.min.js', { exports: false });
 /*#*/ } else if (options.parser == 'esprima') {
-/*#*/ include('../../lib/esprima-min.js');
+/*#*/ include('../../bower_components/esprima/esprima.min.js', { exports: false });
 /*#*/ }
- 
-var PaperScript = new function() {
+
 	// Operators to overload
 
 	var binaryOperators = {
-		'+': 'add',
-		'-': 'subtract',
-		'*': 'multiply',
-		'/': 'divide',
-		'%': 'modulo',
+		// The hidden math functions are to be injected specifically, see below.
+		'+': '_add',
+		'-': '_subtract',
+		'*': '_multiply',
+		'/': '_divide',
+		'%': '_modulo',
+		// Use the real equals.
 		'==': 'equals',
 		'!=': 'equals'
 	};
 
 	var unaryOperators = {
-		'-': 'negate',
+		'-': '_negate',
 		'+': null
 	};
+
+	// Add hidden math functions to Point, Size and Color.
+	var fields = Base.each(
+		'add,subtract,multiply,divide,modulo,negate'.split(','),
+		function(name) {
+			this['_' + name] = '#' + name;
+		}, 
+		{}
+	);
+	paper.Point.inject(fields);
+	paper.Size.inject(fields);
+	paper.Color.inject(fields);
 
 	// Use very short name for the binary operator (_$_) as well as the
 	// unary operator ($_), as operations will be replaced with then.
@@ -76,14 +103,13 @@ var PaperScript = new function() {
 
 	// AST Helpers
 
-
 	/**
 	 * Compiles PaperScript code into JavaScript code.
 	 *
 	 * @name PaperScript.compile
 	 * @function
-	 * @param {String} code The PaperScript code.
-	 * @return {String} The compiled PaperScript as JavaScript code.
+	 * @param {String} code The PaperScript code
+	 * @return {String} the compiled PaperScript as JavaScript code
 	 */
 	function compile(code) {
 		// Use Acorn or Esprima to translate the code into an AST structure
@@ -100,7 +126,6 @@ var PaperScript = new function() {
 		// Converts an original offset to the one in the current state of the 
 		// modified code.
 		function getOffset(offset) {
-			var start = offset;
 			// Add all insertions before this location together to calculate
 			// the current offset
 			for (var i = 0, l = insertions.length; i < l; i++) {
@@ -136,11 +161,8 @@ var PaperScript = new function() {
 		}
 
 		// Recursively walks the AST and replaces the code of certain nodes
-		function walkAst(node) {
-			// array[i++] is a MemberExpression with computed = true.
-			// We cannot replace that with array[_$_(i, "+", 1)], as it would
-			// break the code, so let's bail out.
-			if (!node || node.type === 'MemberExpression' && node.computed)
+		function walkAst(node, parent) {
+			if (!node)
 				return;
 			for (var key in node) {
 				if (key === 'range')
@@ -148,11 +170,11 @@ var PaperScript = new function() {
 				var value = node[key];
 				if (Array.isArray(value)) {
 					for (var i = 0, l = value.length; i < l; i++)
-						walkAst(value[i]);
+						walkAst(value[i], node);
 				} else if (value && typeof value === 'object') {
 					// We cannot use Base.isPlainObject() for these since
 					// Acorn.js uses its own internal prototypes now.
-					walkAst(value);
+					walkAst(value, node);
 				}
 			}
 			switch (node && node.type) {
@@ -175,7 +197,17 @@ var PaperScript = new function() {
 				}
 				break;
 			case 'UpdateExpression':
-				if (!node.prefix) {
+				if (!node.prefix && !(parent && (
+						// We need to filter out parents that are comparison
+						// operators, e.g. for situations like if (++i < 1),
+						// as we can't replace that with if (_$_(i, "+", 1) < 1)
+						// Match any operator beginning with =, !, < and >.
+						parent.type === 'BinaryExpression'
+							&& /^[=!<>]/.test(parent.operator)
+						// array[i++] is a MemberExpression with computed = true
+						// We can't replace that with array[_$_(i, "+", 1)].
+						|| parent.type === 'MemberExpression'
+							&& parent.computed))) {
 					var arg = getCode(node.argument);
 					replaceCode(node, arg + ' = _$_(' + arg + ', "'
 							+ node.operator[0] + '", 1)');
@@ -193,9 +225,9 @@ var PaperScript = new function() {
 		}
 		// Now do the parsing magic
 /*#*/ if (options.parser == 'acorn') {
-		walkAst(acorn.parse(code, { ranges: true }));
+		walkAst(scope.acorn.parse(code, { ranges: true }));
 /*#*/ } else if (options.parser == 'esprima') {
-		walkAst(esprima.parse(code, { range: true }));
+		walkAst(scope.esprima.parse(code, { range: true }));
 /*#*/ }
 		return code;
 	}
@@ -206,9 +238,9 @@ var PaperScript = new function() {
 	 *
 	 * @name PaperScript.evaluate
 	 * @function
-	 * @param {String} code The PaperScript code.
-	 * @param {PaperScript} scope The scope in which the code is executed.
-	 * @return {Object} The result of the code evaluation.
+	 * @param {String} code The PaperScript code
+	 * @param {PaperScript} scope The scope in which the code is executed
+	 * @return {Object} the result of the code evaluation
 	 */
 	function evaluate(code, scope) {
 		// Set currently active scope.
@@ -230,7 +262,7 @@ var PaperScript = new function() {
 				// Only look for tool handlers if something resembling their
 				// name is contained in the code.
 				if (/on(?:Key|Mouse)(?:Up|Down|Move|Drag)/.test(code)) {
-					Base.each(Tool.prototype._events, function(key) {
+					Base.each(paper.Tool.prototype._events, function(key) {
 						var value = eval(key);
 						if (value) {
 							// Use the getTool accessor that handles auto tool
@@ -256,21 +288,7 @@ var PaperScript = new function() {
 		return res;
 	}
 
-/*#*/ if (options.browser) {
-	// Code borrowed from Coffee Script:
-	function request(url, scope) {
-		var xhr = new (window.ActiveXObject || XMLHttpRequest)(
-				'Microsoft.XMLHTTP');
-		xhr.open('GET', url, true);
-		if (xhr.overrideMimeType)
-			xhr.overrideMimeType('text/plain');
-		xhr.onreadystatechange = function() {
-			if (xhr.readyState === 4) {
-				return evaluate(xhr.responseText, scope);
-			}
-		};
-		return xhr.send(null);
-	}
+/*#*/ if (options.environment == 'browser') {
 
 	function load() {
 		var scripts = document.getElementsByTagName('script');
@@ -287,16 +305,19 @@ var PaperScript = new function() {
 				// retrieved through PaperScope.get().
 				// If a canvas id is provided, pass it on to the PaperScope
 				// so a project is created for it now.
-				var canvas = PaperScript.getAttribute(script, 'canvas'),
+				var canvas = PaperScope.getAttribute(script, 'canvas'),
 					// See if there already is a scope for this canvas and reuse
 					// it, to support multiple scripts per canvas. Otherwise
 					// create a new one.
 					scope = PaperScope.get(canvas)
-							|| new PaperScope(script).setup(canvas);
-				if (script.src) {
-					// If we're loading from a source, request that first and then
-					// run later.
-					request(script.src, scope);
+							|| new PaperScope(script).setup(canvas),
+					src = script.src;
+				if (src) {
+					// If we're loading from a source, request that first and
+					// then run later.
+					paper.Http.request('get', src, function(code) {
+						evaluate(code, scope);
+					});
 				} else {
 					// We can simply get the code form the script tag.
 					evaluate(script.innerHTML, scope);
@@ -313,32 +334,41 @@ var PaperScript = new function() {
 		// Handle it asynchronously
 		setTimeout(load);
 	} else {
-		DomEvent.add(window, { load: load });
-	}
-
-	// Produces helpers to e.g. check for both 'canvas' and 'data-paper-canvas'
-	// attributes:
-	function handleAttribute(name) {
-		name += 'Attribute';
-		return function(el, attr) {
-			return el[name](attr) || el[name]('data-paper-' + attr);
-		};
+		paper.DomEvent.add(window, { load: load });
 	}
 
 	return {
 		compile: compile,
 		evaluate: evaluate,
-		load: load,
-		getAttribute: handleAttribute('get'),
-		hasAttribute: handleAttribute('has')
+		load: load
 	};
 
-/*#*/ } else { // !options.browser
+/*#*/ } else { // !options.environment == 'browser'
+/*#*/ if (options.environment == 'node') {
+
+	// Register the .pjs extension for automatic compilation as PaperScript
+
+	var fs = require('fs'),
+		path = require('path');
+
+	require.extensions['.pjs'] = function(module, uri) {
+		var source = compile(fs.readFileSync(uri, 'utf8')),
+			scope = new PaperScope();
+		scope.__filename = uri;
+		scope.__dirname = path.dirname(uri);
+		// Expose core methods and values
+		scope.require = require;
+		scope.console = console;
+		evaluate(source, scope);
+		module.exports = scope;
+	};
+
+/*#*/ } // options.environment == 'node'
 
 	return {
 		compile: compile,
 		evaluate: evaluate
 	};
 
-/*#*/ } // !options.browser
-};
+/*#*/ } // !options.environment == 'browser'
+})(this);

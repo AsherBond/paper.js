@@ -33,6 +33,7 @@
  * {@code PaperScope}.
  */
 var PaperScope = Base.extend(/** @lends PaperScope# */{
+	_class: 'PaperScope',
 
 	/**
 	 * Creates a PaperScope object.
@@ -65,7 +66,7 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
 			var ctx = CanvasProvider.getContext(1, 1);
 			PaperScope.prototype.support = {
 				nativeDash: 'setLineDash' in ctx || 'mozDash' in ctx,
-				nativeBlend: BlendMode.nativeModes
+				nativeBlendModes: BlendMode.nativeModes
 			};
 			CanvasProvider.release(ctx);
 		}
@@ -113,13 +114,25 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
 	},
 
 	/**
+	 * A reference to the local scope. This is required, so `paper` will always
+	 * refer to the local scope, even when calling into it from another scope.
+	 * `paper.activate();` will have to be called in such a situation.
+	 * @type PaperScript
+	 * @private
+	 * @bean
+	 */
+	getPaper: function() {
+		return this;
+	},
+
+	/**
 	 * The list of available tools.
 	 * @name PaperScope#tools
 	 * @type Tool[]
 	 */
 
 	evaluate: function(code) {
-		var res = PaperScript.evaluate(code, this);
+		var res = paper.PaperScript.evaluate(code, this);
 		View.updateFocus();
 		return res;
 	},
@@ -128,7 +141,12 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
 	 * Injects the paper scope into any other given scope. Can be used for
 	 * examle to inject the currently active PaperScope into the window's global
 	 * scope, to emulate PaperScript-style globally accessible Paper classes and
-	 * objects:
+	 * objects.
+	 *
+	 * <b>Please note:</b> Using this method may override native constructors
+	 * (e.g. Path, RGBColor). This may cause problems when using Paper.js in
+	 * conjunction with other libraries that rely on these constructors. Keep
+	 * the library scoped if you encounter issues caused by this.
 	 *
 	 * @example
 	 * paper.install(window);
@@ -149,7 +167,7 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
 		// Do not use Base.each, since we also want to enumerate over
 		// fields on PaperScope.prototype, e.g. all classes
 		for (var key in this) {
-			if (!/^(version|_id)/.test(key) && !(key in scope))
+			if (!/^(version|_id)/.test(key))
 				scope[key] = this[key];
 		}
 	},
@@ -171,6 +189,14 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
 		return this;
 	},
 
+	/**
+	 * Activates this PaperScope, so all newly created items will be placed
+	 * in its active project.
+	 */
+	activate: function() {
+		paper = this;
+	},
+
 	clear: function() {
 		// Remove all projects, views and tools.
 		// This also removes the installed event handlers.
@@ -187,21 +213,35 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
 		delete PaperScope._scopes[this._id];
 	},
 
-	statics: /** @lends PaperScope */{
-		_scopes: {},
-		_id: 0,
-
-		/**
-		 * Retrieves a PaperScope object with the given id or associated with
-		 * the passed canvas element.
-		 *
-		 * @param id
-		 */
-		get: function(id) {
-			// If a script tag is passed, get the id from it.
-			if (typeof id === 'object')
-				id = id.getAttribute('id');
-			return this._scopes[id] || null;
+	statics: new function() {
+		// Produces helpers to e.g. check for both 'canvas' and
+		// 'data-paper-canvas' attributes:
+		function handleAttribute(name) {
+			name += 'Attribute';
+			return function(el, attr) {
+				return el[name](attr) || el[name]('data-paper-' + attr);
+			};
 		}
+
+		return /** @lends PaperScope */{
+			_scopes: {},
+			_id: 0,
+
+			/**
+			 * Retrieves a PaperScope object with the given id or associated with
+			 * the passed canvas element.
+			 *
+			 * @param id
+			 */
+			get: function(id) {
+				// If a script tag is passed, get the id from it.
+				if (typeof id === 'object')
+					id = id.getAttribute('id');
+				return this._scopes[id] || null;
+			},
+
+			getAttribute: handleAttribute('get'),
+			hasAttribute: handleAttribute('has')
+		};
 	}
 });

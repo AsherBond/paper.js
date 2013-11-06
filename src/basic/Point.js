@@ -24,6 +24,7 @@
  * console.log(point.y); // 5
  */
 var Point = Base.extend(/** @lends Point# */{
+	_class: 'Point',
 	// Tell Base.read that the Point constructor supports reading with index
 	_readIndex: true,
 
@@ -70,7 +71,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 * Creates a Point object using the properties in the given object.
 	 *
 	 * @name Point#initialize
-	 * @param {object} object
+	 * @param {Object} object the object describing the point's properties
 	 *
 	 * @example
 	 * // Creating a point using an object literal with length and angle
@@ -134,12 +135,12 @@ var Point = Base.extend(/** @lends Point# */{
 			var hasY = typeof arg1 === 'number';
 			this.x = arg0;
 			this.y = hasY ? arg1 : arg0;
-			if (this._read)
-				this._read = hasY ? 2 : 1;
+			if (this.__read)
+				this.__read = hasY ? 2 : 1;
 		} else if (type === 'undefined' || arg0 === null) {
 			this.x = this.y = 0;
-			if (this._read)
-				this._read = arg0 === null ? 1 : 0;
+			if (this.__read)
+				this.__read = arg0 === null ? 1 : 0;
 		} else {
 			if (Array.isArray(arg0)) {
 				this.x = arg0[0];
@@ -156,11 +157,11 @@ var Point = Base.extend(/** @lends Point# */{
 				this.setAngle(arg0.angle);
 			} else {
 				this.x = this.y = 0;
-				if (this._read)
-					this._read = 0;
+				if (this.__read)
+					this.__read = 0;
 			}
-			if (this._read)
-				this._read = 1;
+			if (this.__read)
+				this.__read = 1;
 		}
 	},
 
@@ -222,7 +223,7 @@ var Point = Base.extend(/** @lends Point# */{
 	},
 
 	/**
-	 * @return {String} A string representation of the point.
+	 * @return {String} a string representation of the point
 	 */
 	toString: function() {
 		var f = Formatter.instance;
@@ -233,8 +234,7 @@ var Point = Base.extend(/** @lends Point# */{
 		var f = options.formatter;
 		// For speed reasons, we directly call formatter.number() here, instead
 		// of converting array through Base.serialize() which makes a copy.
-		return [f.number(this.x),
-				f.number(this.y)];
+		return [f.number(this.x), f.number(this.y)];
 	},
 
 	/**
@@ -244,6 +244,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#add
 	 * @function
+	 * @operator
 	 * @param {Number} number the number to add
 	 * @return {Point} the addition of the point and the value as a new point
 	 *
@@ -259,6 +260,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#add
 	 * @function
+	 * @operator
 	 * @param {Point} point the point to add
 	 * @return {Point} the addition of the two points as a new point
 	 *
@@ -280,6 +282,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#subtract
 	 * @function
+	 * @operator
 	 * @param {Number} number the number to subtract
 	 * @return {Point} the subtraction of the point and the value as a new point
 	 *
@@ -295,6 +298,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#subtract
 	 * @function
+	 * @operator
 	 * @param {Point} point the point to subtract
 	 * @return {Point} the subtraction of the two points as a new point
 	 *
@@ -316,6 +320,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#multiply
 	 * @function
+	 * @operator
 	 * @param {Number} number the number to multiply by
 	 * @return {Point} the multiplication of the point and the value as a new point
 	 *
@@ -331,6 +336,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#multiply
 	 * @function
+	 * @operator
 	 * @param {Point} point the point to multiply by
 	 * @return {Point} the multiplication of the two points as a new point
 	 *
@@ -352,6 +358,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#divide
 	 * @function
+	 * @operator
 	 * @param {Number} number the number to divide by
 	 * @return {Point} the division of the point and the value as a new point
 	 *
@@ -367,6 +374,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#divide
 	 * @function
+	 * @operator
 	 * @param {Point} point the point to divide by
 	 * @return {Point} the division of the two points as a new point
 	 *
@@ -387,6 +395,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#modulo
 	 * @function
+	 * @operator
 	 * @param {Number} value
 	 * @return {Point} the integer remainders of dividing the point by the value
 	 *                 as a new point
@@ -401,6 +410,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 *
 	 * @name Point#modulo
 	 * @function
+	 * @operator
 	 * @param {Point} point
 	 * @return {Point} the integer remainders of dividing the points by each
 	 *                 other as a new point
@@ -423,7 +433,7 @@ var Point = Base.extend(/** @lends Point# */{
 	 * is not modified!
 	 *
 	 * @param {Matrix} matrix
-	 * @return {Point} The transformed point
+	 * @return {Point} the transformed point
 	 */
 	transform: function(matrix) {
 		return matrix ? matrix._transformPoint(this) : this;
@@ -465,7 +475,7 @@ var Point = Base.extend(/** @lends Point# */{
 	},
 
 	setLength: function(length) {
-		// Whenever setting x/y, use #set() instead of direct assignment,
+		// Whenever chaning both x & y, use #set() instead of direct assignment,
 		// so LinkedPoint does not report changes twice.
 		if (this.isZero()) {
 			var angle = this._angle || 0;
@@ -477,7 +487,7 @@ var Point = Base.extend(/** @lends Point# */{
 			var scale = length / this.getLength();
 			// Force calculation of angle now, so it will be preserved even when
 			// x and y are 0
-			if (scale === 0)
+			if (Numerical.isZero(scale))
 				this.getAngle();
 			this.set(
 				this.x * scale,
@@ -494,8 +504,8 @@ var Point = Base.extend(/** @lends Point# */{
 	 * The object itself is not modified!
 	 *
 	 * @param {Number} [length=1] The length of the normalized vector
-	 * @return {Point} The normalized vector of the vector that is represented
-	 *                 by this point's coordinates.
+	 * @return {Point} the normalized vector of the vector that is represented
+	 *                 by this point's coordinates
 	 */
 	normalize: function(length) {
 		if (length === undefined)
@@ -520,9 +530,6 @@ var Point = Base.extend(/** @lends Point# */{
 	 */
 	/**
 	 * The vector's angle in degrees, measured from the x-axis to the vector.
-	 *
-	 * The angle is unsigned, no information about rotational direction is
-	 * given.
 	 *
 	 * @name Point#getAngle
 	 * @bean
@@ -558,9 +565,6 @@ var Point = Base.extend(/** @lends Point# */{
 	 */
 	/**
 	 * The vector's angle in radians, measured from the x-axis to the vector.
-	 *
-	 * The angle is unsigned, no information about rotational direction is
-	 * given.
 	 *
 	 * @name Point#getAngleInRadians
 	 * @bean
@@ -775,74 +779,6 @@ var Point = Base.extend(/** @lends Point# */{
 	 * @return {Boolean} {@true the point is selected}
 	 */
 
-	statics: /** @lends Point */{
-		/**
-		 * Returns a new point object with the smallest {@link #x} and
-		 * {@link #y} of the supplied points.
-		 *
-		 * @static
-		 * @param {Point} point1
-		 * @param {Point} point2
-		 * @returns {Point} The newly created point object
-		 *
-		 * @example
-		 * var point1 = new Point(10, 100);
-		 * var point2 = new Point(200, 5);
-		 * var minPoint = Point.min(point1, point2);
-		 * console.log(minPoint); // {x: 10, y: 5}
-		 */
-		min: function(point1, point2) {
-			var _point1 = Point.read(arguments);
-				_point2 = Point.read(arguments);
-			return new Point(
-				Math.min(_point1.x, _point2.x),
-				Math.min(_point1.y, _point2.y)
-			);
-		},
-
-		/**
-		 * Returns a new point object with the largest {@link #x} and
-		 * {@link #y} of the supplied points.
-		 *
-		 * @static
-		 * @param {Point} point1
-		 * @param {Point} point2
-		 * @returns {Point} The newly created point object
-		 *
-		 * @example
-		 * var point1 = new Point(10, 100);
-		 * var point2 = new Point(200, 5);
-		 * var maxPoint = Point.max(point1, point2);
-		 * console.log(maxPoint); // {x: 200, y: 100}
-		 */
-		max: function(point1, point2) {
-			var _point1 = Point.read(arguments);
-				_point2 = Point.read(arguments);
-			return new Point(
-				Math.max(_point1.x, _point2.x),
-				Math.max(_point1.y, _point2.y)
-			);
-		},
-
-		/**
-		 * Returns a point object with random {@link #x} and {@link #y} values
-		 * between {@code 0} and {@code 1}.
-		 *
-		 * @returns {Point} The newly created point object
-		 * @static
-		 *
-		 * @example
-		 * var maxPoint = new Point(100, 100);
-		 * var randomPoint = Point.random();
-		 *
-		 * // A point between {x:0, y:0} and {x:100, y:100}:
-		 * var point = maxPoint * randomPoint;
-		 */
-		random: function() {
-			return new Point(Math.random(), Math.random());
-		}
-	}
-}, new function() { // Scope for injecting round, ceil, floor, abs:
 	/**
 	 * {@grouptitle Math Functions}
 	 *
@@ -902,26 +838,100 @@ var Point = Base.extend(/** @lends Point# */{
 	 * var absPoint = point.abs();
 	 * console.log(absPoint); // {x: 5, y: 10}
 	 */
+	statics: /** @lends Point */{
+		/**
+		 * Returns a new point object with the smallest {@link #x} and
+		 * {@link #y} of the supplied points.
+		 *
+		 * @static
+		 * @param {Point} point1
+		 * @param {Point} point2
+		 * @returns {Point} the newly created point object
+		 *
+		 * @example
+		 * var point1 = new Point(10, 100);
+		 * var point2 = new Point(200, 5);
+		 * var minPoint = Point.min(point1, point2);
+		 * console.log(minPoint); // {x: 10, y: 5}
+		 */
+		min: function(/* point1, point2 */) {
+			var point1 = Point.read(arguments);
+				point2 = Point.read(arguments);
+			return new Point(
+				Math.min(point1.x, point2.x),
+				Math.min(point1.y, point2.y)
+			);
+		},
 
-	return Base.each(['round', 'ceil', 'floor', 'abs'], function(name) {
-		var op = Math[name];
-		this[name] = function() {
-			return new Point(op(this.x), op(this.y));
-		};
-	}, {});
-});
+		/**
+		 * Returns a new point object with the largest {@link #x} and
+		 * {@link #y} of the supplied points.
+		 *
+		 * @static
+		 * @param {Point} point1
+		 * @param {Point} point2
+		 * @returns {Point} the newly created point object
+		 *
+		 * @example
+		 * var point1 = new Point(10, 100);
+		 * var point2 = new Point(200, 5);
+		 * var maxPoint = Point.max(point1, point2);
+		 * console.log(maxPoint); // {x: 200, y: 100}
+		 */
+		max: function(/* point1, point2 */) {
+			var point1 = Point.read(arguments);
+				point2 = Point.read(arguments);
+			return new Point(
+				Math.max(point1.x, point2.x),
+				Math.max(point1.y, point2.y)
+			);
+		},
+
+		/**
+		 * Returns a point object with random {@link #x} and {@link #y} values
+		 * between {@code 0} and {@code 1}.
+		 *
+		 * @returns {Point} the newly created point object
+		 * @static
+		 *
+		 * @example
+		 * var maxPoint = new Point(100, 100);
+		 * var randomPoint = Point.random();
+		 *
+		 * // A point between {x:0, y:0} and {x:100, y:100}:
+		 * var point = maxPoint * randomPoint;
+		 */
+		random: function() {
+			return new Point(Math.random(), Math.random());
+		}
+	}
+}, Base.each(['round', 'ceil', 'floor', 'abs'], function(name) {
+	// Inject round, ceil, floor, abs:
+	var op = Math[name];
+	this[name] = function() {
+		return new Point(op(this.x), op(this.y));
+	};
+}, {}));
 
 /**
  * @name LinkedPoint
  *
  * @class An internal version of Point that notifies its owner of each change
  * through setting itself again on the setter that corresponds to the getter
- * that produced this LinkedPoint. See uses of LinkedPoint.create()
+ * that produced this LinkedPoint.
  * Note: This prototype is not exported.
  *
  * @ignore
  */
 var LinkedPoint = Point.extend({
+	// Have LinkedPoint appear as a normal Point in debugging
+	initialize: function Point(x, y, owner, setter) {
+		this._x = x;
+		this._y = y;
+		this._owner = owner;
+		this._setter = setter;
+	},
+
 	set: function(x, y, dontNotify) {
 		this._x = x;
 		this._y = y;
@@ -946,21 +956,5 @@ var LinkedPoint = Point.extend({
 	setY: function(y) {
 		this._y = y;
 		this._owner[this._setter](this);
-	},
-
-	statics: {
-		create: function(owner, setter, x, y, dontLink) {
-			// Support creation of normal Points rather than LinkedPoints
-			// through an optional parameter that can be passed to the getters.
-			// See e.g. Rectangle#getPoint(true).
-			if (dontLink)
-				return new Point(x, y);
-			var point = Base.create(LinkedPoint);
-			point._x = x;
-			point._y = y;
-			point._owner = owner;
-			point._setter = setter;
-			return point;
-		}
 	}
 });

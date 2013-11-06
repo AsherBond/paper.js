@@ -21,6 +21,7 @@
  * @extends PathItem
  */
 var CompoundPath = PathItem.extend(/** @lends CompoundPath# */{
+	_class: 'CompoundPath',
 	_serializeFields: {
 		children: []
 	},
@@ -49,11 +50,10 @@ var CompoundPath = PathItem.extend(/** @lends CompoundPath# */{
 	 * compoundPath.children[1].position.x += 5;
 	 */
 	initialize: function CompoundPath(arg) {
-		PathItem.call(this);
 		// CompoundPath has children and supports named children.
 		this._children = [];
 		this._namedChildren = {};
-		if (arg && !this._set(arg))
+		if (!this._initialize(arg))
 			this.addChildren(Array.isArray(arg) ? arg : arguments);
 	},
 
@@ -71,23 +71,6 @@ var CompoundPath = PathItem.extend(/** @lends CompoundPath# */{
 				item.setClockwise(item._index === 0);
 		}
 		return items;
-	},
-
-	/**
-	 * If this is a compound path with only one path inside,
-	 * the path is moved outside and the compound path is erased.
-	 * Otherwise, the compound path is returned unmodified.
-	 *
-	 * @return {CompoundPath|Path} the flattened compound path
-	 */
-	reduce: function() {
-		if (this._children.length == 1) {
-			var child = this._children[0];
-			child.insertAbove(this);
-			this.remove();
-			return child;
-		}
-		return this;
 	},
 
 	/**
@@ -202,53 +185,53 @@ var CompoundPath = PathItem.extend(/** @lends CompoundPath# */{
 		return paths.join(' ');
 	},
 
-	/**
-	 * A private method to help with both #contains() and #_hitTest().
-	 * Instead of simply returning a boolean, it returns a children of all the
-	 * children that contain the point. This is required by _hitTest(), and
-	 * Item#contains() is prepared for such a result.
-	 */
-	_contains: function(point) {
-		// Compound paths are a little complex: In order to determine wether a
-		// point is inside a path or not due to the even-odd rule, we need to
-		// check all the children and count how many intersect. If it's an odd
-		// number, the point is inside the path. Once we know it's inside the
-		// path, _hitTest also needs access to the first intersecting element, 
-		// for the HitResult, so we collect and return a list here.
-		var children = [];
-		for (var i = 0, l = this._children.length; i < l; i++) {
-			var child = this._children[i];
-			if (child.contains(point))
-				children.push(child);
-		}
-		return (children.length & 1) == 1 && children;
+	_getWinding: function(point) {
+		var children =  this._children,
+			winding = 0;
+		for (var i = 0, l = children.length; i < l; i++)
+			winding += children[i]._getWinding(point);
+		return winding;
 	},
 
-	_hitTest: function _hitTest(point, options) {
+	_hitTest : function _hitTest(point, options) {
+		// Do not test children for fill, since a compound path forms one shape.
+		// options.compoundChildren allows to specifically do so, see below.
 		var res = _hitTest.base.call(this, point,
 				Base.merge(options, { fill: false }));
-		if (!res && options.fill && this.hasFill()) {
-			res = this._contains(point);
-			res = res ? new HitResult('fill', res[0]) : null;
-		}
+		if (!res) {
+			// If asked to query all children seperately, perform the same loop
+			// as Item#hitTest() now on the compound children.
+			if (options.compoundChildren) {
+				var children =  this._children;
+				for (var i = children.length - 1; i >= 0 && !res; i--)
+					res = children[i]._hitTest(point, options);
+			} else if (options.fill && this.hasFill()
+					&& this._contains(point)) {
+				res = new HitResult('fill', this);
+			}
+		} 
 		return res;
 	},
 
 	_draw: function(ctx, param) {
-		var children = this._children,
-			style = this._style;
+		var children = this._children;
 		// Return early if the compound path doesn't have any children:
 		if (children.length === 0)
 			return;
+
 		ctx.beginPath();
 		param = param.extend({ compound: true });
 		for (var i = 0, l = children.length; i < l; i++)
 			children[i].draw(ctx, param);
+
 		if (!param.clip) {
 			this._setStyles(ctx);
-			if (style.getFillColor())
-				ctx.fill();
-			if (style.getStrokeColor())
+			var style = this._style;
+			if (style.hasFill()) {
+				ctx.fill(style.getWindingRule());
+				ctx.shadowColor = 'rgba(0,0,0,0)';
+			}
+			if (style.hasStroke())
 				ctx.stroke();
 		}
 	}
@@ -267,13 +250,13 @@ var CompoundPath = PathItem.extend(/** @lends CompoundPath# */{
 		// Note: Documentation for these methods is found in PathItem, as they
 		// are considered abstract methods of PathItem and need to be defined in
 		// all implementing classes.
-		moveTo: function(point) {
+		moveTo: function(/* point */) {
 			var path = new Path();
 			this.addChild(path);
 			path.moveTo.apply(path, arguments);
 		},
 
-		moveBy: function(point) {
+		moveBy: function(/* point */) {
 			this.moveTo(getCurrentPath(this).getLastSegment()._point.add(
 					Point.read(arguments)));
 		},
@@ -284,13 +267,15 @@ var CompoundPath = PathItem.extend(/** @lends CompoundPath# */{
 	};
 
 	// Redirect all other drawing commands to the current path
-	Base.each(['lineTo', 'cubicCurveTo', 'quadraticCurveTo', 'curveTo',
-			'arcTo', 'lineBy', 'curveBy', 'arcBy'], function(key) {
-		fields[key] = function() {
-			var path = getCurrentPath(this);
-			path[key].apply(path, arguments);
-		};
-	});
+	Base.each(['lineTo', 'cubicCurveTo', 'quadraticCurveTo', 'curveTo', 'arcTo',
+			'lineBy', 'cubicCurveBy', 'quadraticCurveBy', 'curveBy', 'arcBy'],
+			function(key) {
+				fields[key] = function() {
+					var path = getCurrentPath(this);
+					path[key].apply(path, arguments);
+				};
+			}
+	);
 
 	return fields;
 });

@@ -18,6 +18,8 @@
  * {@link Project#hitTest(point)}.
  */
 var HitResult = Base.extend(/** @lends HitResult# */{
+	_class: 'HitResult',
+
 	initialize: function HitResult(type, item, values) {
 		this.type = type;
 		this.item = item;
@@ -78,7 +80,7 @@ var HitResult = Base.extend(/** @lends HitResult# */{
 
 	/**
 	 * If the HitResult has a type of 'stroke', 'segment', 'handle-in' or
-	 * 'handle-out', this property refers to the Segment that was hit or that
+	 * 'handle-out', this property refers to the segment that was hit or that
 	 * is closest to the hitResult.location on the curve.
 	 *
 	 * @name HitResult#segment

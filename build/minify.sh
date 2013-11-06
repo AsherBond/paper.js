@@ -10,9 +10,5 @@
 #
 # All rights reserved.
 
-# We need to keep dead_code around for now, since the very odd JavaScriptCore
-# scope bug fix (nop().nop()) requires it.
-# TODO: uglifyjs gets confused about Base and Color constructor naming, so we
-# have to tell it to not rename these. It's also not renaming all the local
-# references to classes which could yield a lot of size improvements.
-uglifyjs ../dist/paper.js -o ../dist/paper-min.js -c unsafe=true,unused=false,dead_code=false,hoist_funs=false -m -r "Base,Color,_$_,$_" -b ascii_only=true,beautify=false --comments /^!/
+../node_modules/.bin/uglifyjs ../dist/paper-full.js -o ../dist/paper-full.min.js -c unsafe=true -m -b ascii_only=true,beautify=false --comments /^!/
+../node_modules/.bin/uglifyjs ../dist/paper-core.js -o ../dist/paper-core.min.js -c unsafe=true -m --comments /^!/

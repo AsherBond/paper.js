@@ -50,7 +50,7 @@ var Color = Base.extend(new function() {
 		gradient: ['gradient', 'origin', 'destination', 'highlight']
 	};
 
-	var parsers = {}, // Parsers of values for setters, by type and property
+	var componentParsers = {}, // Parsers of values for setters, by type and property
 		colorCache = {},
 		colorCtx;
 
@@ -195,12 +195,12 @@ var Color = Base.extend(new function() {
 			return [0, 0, g];
 		},
 
-		'gradient-rgb': function(gradient) {
+		'gradient-rgb': function(/* gradient */) {
 			// TODO: Implement
 			return [];
 		},
 
-		'rgb-gradient': function(r, g, b) {
+		'rgb-gradient': function(/* r, g, b */) {
 			// TODO: Implement
 			return [];
 		}
@@ -213,7 +213,7 @@ var Color = Base.extend(new function() {
 	// its component.
 	return Base.each(types, function(properties, type) {
 		// Keep track of parser functions per type.
-		parsers[type] = [];
+		componentParsers[type] = [];
 		Base.each(properties, function(name, index) {
 			var part = Base.capitalize(name),
 				// Both hue and saturation have overlapping properties between
@@ -222,12 +222,12 @@ var Color = Base.extend(new function() {
 				hasOverlap = /^(hue|saturation)$/.test(name),
 				// Produce value parser function for the given type / propeprty
 				// name combination.
-				parser = parsers[type][index] = name === 'gradient'
+				parser = componentParsers[type][index] = name === 'gradient'
 					? function(value) {
 						var current = this._components[0];
 						value = Gradient.read(
 								Array.isArray(value) ? value : arguments,
-								0, 0, true); // readNull
+								0, 0, { readNull: true });
 						if (current !== value) {
 							if (current)
 								current._removeOwner(this);
@@ -243,10 +243,11 @@ var Color = Base.extend(new function() {
 									: ((value % 360) + 360) % 360;
 						}
 						: type === 'gradient'
-							? function(value) {
-								// ..., readNull, clone);
-								return Point.read(arguments, 0, 0,
-										name === 'highlight', true);
+							? function(/* value */) {
+								return Point.read(arguments, 0, 0, {
+										readNull: name === 'highlight',
+										clone: true
+								});
 							}
 							: function(value) {
 								return isNaN(value) ? 0
@@ -265,6 +266,7 @@ var Color = Base.extend(new function() {
 				if (this._type !== type
 						&& !(hasOverlap && /^hs[bl]$/.test(this._type))) {
 					this._components = this._convert(type);
+					this._properties = types[type];
 					this._type = type;
 				}
 				value = parser.call(this, value);
@@ -275,11 +277,12 @@ var Color = Base.extend(new function() {
 			};
 		}, this);
 	}, /** @lends Color# */{
+		_class: 'Color',
 		// Tell Base.read that the Point constructor supports reading with index
 		_readIndex: true,
 
 		/**
-		 * Creates a RGB Color object
+		 * Creates a RGB Color object.
 		 *
 		 * @name Color#initialize
 		 * @param {Number} red the amount of red in the color as a value
@@ -302,7 +305,7 @@ var Color = Base.extend(new function() {
 		 * circle.fillColor = new Color(1, 0, 0.5);
 		 */
 		/**
-		 * Creates a GrayColor object
+		 * Creates a gray Color object.
 		 *
 		 * @name Color#initialize
 		 * @param {Number} gray the amount of gray in the color as a value
@@ -321,7 +324,87 @@ var Color = Base.extend(new function() {
 		 * circle.fillColor = new Color(0.5);
 		 */
 		/**
-		 * Creates a gradient color object.
+		 * Creates a HSB, HSL or gradient Color object from the properties of
+		 * the provided object:
+		 *
+		 * <b>HSB Color</b>:<br>
+		 * {@code hue: Number} — the hue of the color as a value in
+		 * degrees between {@code 0} and {@code 360}<br>
+		 * {@code saturation: Number} — the saturation of the color as a
+		 * value between {@code 0} and {@code 1}<br>
+		 * {@code brightness: Number} — the brightness of the color as a
+		 * value between {@code 0} and {@code 1}<br>
+		 * {@code alpha: Number} — the alpha of the color as a value between
+		 * {@code 0} and {@code 1}
+		 *
+		 * <b>HSL Color</b>:<br>
+		 * {@code hue: Number} — the hue of the color as a value in
+		 * degrees between {@code 0} and {@code 360}<br>
+		 * {@code saturation: Number} — the saturation of the color as a
+		 * value between {@code 0} and {@code 1}<br>
+		 * {@code lightness: Number} — the lightness of the color as a
+		 * value between {@code 0} and {@code 1}<br>
+		 * {@code alpha: Number} — the alpha of the color as a value between
+		 * {@code 0} and {@code 1}
+		 *
+		 * <b>Gradient Color</b>:<br>
+		 * {@code gradient: Gradient} — the gradient object that describes the
+		 *  color stops and type of gradient to be used.<br>
+		 * {@code origin: Point} — the origin point of the gradient<br>
+		 * {@code destination: Point} — the destination point of the gradient
+		 * {@code stops: Array of GradientStop} — the gradient stops describing
+		 * the gradient, as an alternative to providing a gradient object<br>
+		 * {@code radial: Boolean} — controls whether the gradient is radial, as
+		 * an alternative to providing a gradient object<br>
+		 *
+		 * @name Color#initialize
+		 * @param {Object} object an object describing the components and 
+		 *        properties of the color.
+		 *
+		 * @example {@paperscript}
+		 * // Creating a HSB Color:
+		 *
+		 * // Create a circle shaped path at {x: 80, y: 50}
+		 * // with a radius of 30:
+		 * var circle = new Path.Circle(new Point(80, 50), 30);
+		 *
+		 * // Create an HSB Color with a hue of 90 degrees, a saturation
+		 * // 100% and a brightness of 100%:
+		 * circle.fillColor = { hue: 90, saturation: 1, brightness: 1 };
+		 *
+		 * @example {@paperscript}
+		 * // Creating a HSL Color:
+		 *
+		 * // Create a circle shaped path at {x: 80, y: 50}
+		 * // with a radius of 30:
+		 * var circle = new Path.Circle(new Point(80, 50), 30);
+		 *
+		 * // Create an HSL Color with a hue of 90 degrees, a saturation
+		 * // 100% and a lightness of 50%:
+		 * circle.fillColor = { hue: 90, saturation: 1, lightness: 0.5 };
+		 *
+		 * @example {@paperscript height=200}
+		 * // Creating a gradient color from an object literal:
+		 *
+		 * // Define two points which we will be using to construct
+		 * // the path and to position the gradient color:
+		 * var topLeft = view.center - [80, 80];
+		 * var bottomRight = view.center + [80, 80];
+ 		 * 
+		 * var path = new Path.Rectangle({
+		 *	topLeft: topLeft,
+		 *	bottomRight: bottomRight,
+		 *	// Fill the path with a gradient of three color stops
+		 *	// that runs between the two points we defined earlier:
+		 *	fillColor: {
+		 *		stops: ['yellow', 'red', 'blue'],
+		 *		origin: topLeft,
+		 *		destination: bottomRight
+		 *	}
+		 * });
+		 */
+		/**
+		 * Creates a gradient Color object.
 		 *
 		 * @name Color#initialize
 		 * @param {Gradient} gradient
@@ -360,8 +443,8 @@ var Color = Base.extend(new function() {
 		 * // Create a circle shaped path at the center of the view
 		 * // with a radius of 80:
 		 * var path = new Path.Circle({
-		 * 	center: view.center,
-		 * 	radius: 80
+		 *	center: view.center,
+		 *	radius: 80
 		 * });
 		 *
 		 * // The stops array: yellow mixes with red between 0 and 15%,
@@ -385,61 +468,12 @@ var Color = Base.extend(new function() {
 		 * // Set the fill color of the path to the gradient color:
 		 * path.fillColor = gradientColor;
 		 */
-		// DOCS: Fix HSB Color documentation
-		/**
-		 * Creates an HSB Color object
-		 *
-		 * @name Color#initialize
-		 * @param {Number} hue the hue of the color as a value in degrees between
-		 * {@code 0} and {@code 360}.
-		 * @param {Number} saturation the saturation of the color as a value
-		 * between {@code 0} and {@code 1}
-		 * @param {Number} brightness the brightness of the color as a value
-		 * between {@code 0} and {@code 1}
-		 * @param {Number} [alpha] the alpha of the color as a value between
-		 * {@code 0} and {@code 1}
-		 *
-		 * @example {@paperscript}
-		 * // Creating an HSB Color:
-		 *
-		 * // Create a circle shaped path at {x: 80, y: 50}
-		 * // with a radius of 30:
-		 * var circle = new Path.Circle(new Point(80, 50), 30);
-		 *
-		 * // Create an HSB Color with a hue of 90 degrees, a saturation
-		 * // 100% and a brightness of 100%:
-		 * circle.fillColor = { hue: 90, saturation: 1, brightness: 1 };
-		 */
-		// DOCS: Fix HSL Color documentation
-		/**
-		 * Creates a HSL Color object
-		 *
-		 * @name Color#initialize
-		 * @param {Number} hue the hue of the color as a value in degrees between
-		 * {@code 0} and {@code 360}.
-		 * @param {Number} saturation the saturation of the color as a value
-		 * between {@code 0} and {@code 1}
-		 * @param {Number} lightness the lightness of the color as a value
-		 * between {@code 0} and {@code 1}
-		 * @param {Number} [alpha] the alpha of the color as a value between
-		 * {@code 0} and {@code 1}
-		 *
-		 * @example {@paperscript}
-		 * // Creating a HSL Color:
-		 *
-		 * // Create a circle shaped path at {x: 80, y: 50}
-		 * // with a radius of 30:
-		 * var circle = new Path.Circle(new Point(80, 50), 30);
-		 *
-		 * // Create an HslColor with a hue of 90 degrees, a saturation
-		 * // 100% and a lightness of 50%:
-		 * circle.fillColor = { hue: 90, saturation: 1, lightness: 0.5 };
-		 */
 		initialize: function Color(arg) {
 			// We are storing color internally as an array of components
 			var slice = Array.prototype.slice,
 				args = arguments,
 				read = 0,
+				parse = true,
 				type,
 				components,
 				alpha,
@@ -462,7 +496,7 @@ var Color = Base.extend(new function() {
 					alpha = args[2];
 				} else {
 					// For deserialization, shift out and process normally.
-					if (this._read)
+					if (this.__read)
 						read = 1; // Will be increased below
 					// Shift type out of the arguments, and process normally.
 					args = slice.call(args, 1);
@@ -470,6 +504,8 @@ var Color = Base.extend(new function() {
 				}
 			}
 			if (!components) {
+				// Only parse values if we're not told to not do so
+				parse = !(this.__options && this.__options.dontParse);
 				// Determine if there is a values array
 				values = argType === 'number'
 						? args
@@ -483,14 +519,14 @@ var Color = Base.extend(new function() {
 				if (values) {
 					if (!type)
 						// type = values.length >= 4
-						// 		? 'cmyk'
-						// 		: values.length >= 3
+						//		? 'cmyk'
+						//		: values.length >= 3
 						type = values.length >= 3
 								? 'rgb'
 								: 'gray';
 					var length = types[type].length;
 					alpha = values[length];
-					if (this._read)
+					if (this.__read)
 						read += values === arguments
 							? length + (alpha != null ? 1 : 0)
 							: 1;
@@ -532,7 +568,7 @@ var Color = Base.extend(new function() {
 									: 'rgb';
 						// Convert to array and parse in one loop, for efficiency
 						var properties = types[type];
-							parse = parsers[type];
+							parsers = parse && componentParsers[type];
 						this._components = components = [];
 						for (var i = 0, l = properties.length; i < l; i++) {
 							var value = arg[properties[i]];
@@ -546,14 +582,15 @@ var Color = Base.extend(new function() {
 									radial: arg.radial
 								};
 							}
-							value = parse[i].call(this, value);
+							if (parse)
+								value = parsers[i].call(this, value);
 							if (value != null)
 								components[i] = value;
 						}
 						alpha = arg.alpha;
 					}
 				}
-				if (this._read && type)
+				if (this.__read && type)
 					read = 1;
 			}
 			// Default fallbacks: rgb, black
@@ -566,17 +603,20 @@ var Color = Base.extend(new function() {
 				// values are defined, parsers are still called to produce
 				// defaults.
 				this._components = components = [];
-				var parse = parsers[this._type];
-				for (var i = 0, l = parse.length; i < l; i++) {
-					var value = parse[i].call(this, values && values[i]);
+				var parsers = componentParsers[this._type];
+				for (var i = 0, l = parsers.length; i < l; i++) {
+					var value = values && values[i];
+					if (parse)
+						value = parsers[i].call(this, value);
 					if (value != null)
 						components[i] = value;
 				}
 			}
 			this._components = components;
+			this._properties = types[this._type];
 			this._alpha = alpha;
-			if (this._read)
-				this._read = read;
+			if (this.__read)
+				this.__read = read;
 		},
 
 		_serialize: function(options, dictionary) {
@@ -602,7 +642,7 @@ var Color = Base.extend(new function() {
 		 * @return {Color} a copy of the color object
 		 */
 		clone: function() {
-			return new Color(this._type, this._components.slice(), this._alpha);
+			return new Color(this);
 		},
 
 		/**
@@ -640,6 +680,7 @@ var Color = Base.extend(new function() {
 
 		setType: function(type) {
 			this._components = this._convert(type);
+			this._properties = types[type];
 			this._type = type;
 		},
 
@@ -663,9 +704,9 @@ var Color = Base.extend(new function() {
 		 *
 		 * // Fill the circle with red and give it a 20pt green stroke:
 		 * circle.style = {
-		 * 	fillColor: 'red',
-		 * 	strokeColor: 'green',
-		 * 	strokeWidth: 20
+		 *	fillColor: 'red',
+		 *	strokeColor: 'green',
+		 *	strokeWidth: 20
 		 * };
 		 *
 		 * // Make the stroke half transparent:
@@ -699,7 +740,8 @@ var Color = Base.extend(new function() {
 		equals: function(color) {
 			if (Base.isPlainValue(color))
 				color = Color.read(arguments);
-			return color === this || color && this._type === color._type
+			return color === this || color && this._class === color._class
+					&& this._type === color._type
 					&& this._alpha === color._alpha
 					&& Base.equals(this._components, color._components)
 					|| false;
@@ -707,10 +749,10 @@ var Color = Base.extend(new function() {
 
 		/**
 		 * {@grouptitle String Representations}
-		 * @return {String} A string representation of the color.
+		 * @return {String} a string representation of the color
 		 */
 		toString: function() {
-			var properties = types[this._type],
+			var properties = this._properties,
 				parts = [],
 				isGradient = this._type === 'gradient',
 				f = Formatter.instance;
@@ -726,7 +768,7 @@ var Color = Base.extend(new function() {
 		},
 
 		/**
-		 * @return {String} A css string representation of the color.
+		 * @return {String} a css string representation of the color
 		 */
 		toCSS: function(noAlpha) {
 			var components = this._convert('rgb'),
@@ -795,44 +837,6 @@ var Color = Base.extend(new function() {
 		},
 
 		/**
-		 * {@grouptitle RGB Components}
-		 *
-		 * The amount of red in the color as a value between {@code 0} and
-		 * {@code 1}.
-		 *
-		 * @name Color#red
-		 * @property
-		 * @type Number
-		 *
-		 * @example {@paperscript}
-		 * // Changing the amount of red in a color:
-		 * var circle = new Path.Circle(new Point(80, 50), 30);
-		 * circle.fillColor = 'blue';
-		 *
-		 * // Blue + red = purple:
-		 * circle.fillColor.red = 1;
-		 */
-
-		/**
-		 * The amount of green in the color as a value between {@code 0} and
-		 * {@code 1}.
-		 *
-		 * @name Color#green
-		 * @property
-		 * @type Number
-		 *
-		 * @example {@paperscript}
-		 * // Changing the amount of green in a color:
-		 * var circle = new Path.Circle(new Point(80, 50), 30);
-		 *
-		 * // First we set the fill color to red:
-		 * circle.fillColor = 'red';
-		 *
-		 * // Red + green = yellow:
-		 * circle.fillColor.green = 1;
-		 */
-
-		/**
 		 * The amount of blue in the color as a value between {@code 0} and
 		 * {@code 1}.
 		 *
@@ -887,7 +891,7 @@ var Color = Base.extend(new function() {
 		 * path.fillColor = 'red';
 		 *
 		 * function onFrame(event) {
-		 * 	path.fillColor.hue += 0.5;
+		 *	path.fillColor.hue += 0.5;
 		 * }
 		 */
 
@@ -950,9 +954,9 @@ var Color = Base.extend(new function() {
 		 * path.fillColor = gradientColor;
 		 *
 		 * function onMouseMove(event) {
-		 * 	// Set the origin point of the path's gradient color
-		 * 	// to the position of the mouse:
-		 * 	path.fillColor.origin = event.point;
+		 *	// Set the origin point of the path's gradient color
+		 *	// to the position of the mouse:
+		 *	path.fillColor.origin = event.point;
 		 * }
 		 */
 
@@ -971,8 +975,8 @@ var Color = Base.extend(new function() {
 		 * // using 40% of the height of the view as its radius
 		 * // and fill it with a radial gradient color:
 		 * var path = new Path.Circle({
-		 * 	center: view.center,
-		 * 	radius: view.bounds.height * 0.4
+		 *	center: view.center,
+		 *	radius: view.bounds.height * 0.4
 		 * });
 		 *
 		 * var gradient = new Gradient(['yellow', 'red', 'black'], true);
@@ -982,9 +986,9 @@ var Color = Base.extend(new function() {
 		 * path.fillColor = gradientColor;
 		 *
 		 * function onMouseMove(event) {
-		 * 	// Set the origin point of the path's gradient color
-		 * 	// to the position of the mouse:
-		 * 	path.fillColor.destination = event.point;
+		 *	// Set the origin point of the path's gradient color
+		 *	// to the position of the mouse:
+		 *	path.fillColor.destination = event.point;
 		 * }
 		 */
 
@@ -1000,23 +1004,23 @@ var Color = Base.extend(new function() {
 		 * // using 40% of the height of the view as its radius
 		 * // and fill it with a radial gradient color:
 		 * var path = new Path.Circle({
-		 * 	center: view.center,
-		 * 	radius: view.bounds.height * 0.4
+		 *	center: view.center,
+		 *	radius: view.bounds.height * 0.4
 		 * });
 		 * 
 		 * path.fillColor = {
-		 * 	gradient: {
-		 * 		stops: ['yellow', 'red', 'black'],
-		 * 		radial: true
-		 * 	},
-		 * 	origin: path.position,
-		 * 	destination: path.bounds.rightCenter
+		 *	gradient: {
+		 *		stops: ['yellow', 'red', 'black'],
+		 *		radial: true
+		 *	},
+		 *	origin: path.position,
+		 *	destination: path.bounds.rightCenter
 		 * };
 		 * 
 		 * function onMouseMove(event) {
-		 * 	// Set the origin highlight of the path's gradient color
-		 * 	// to the position of the mouse:
-		 * 	path.fillColor.highlight = event.point;
+		 *	// Set the origin highlight of the path's gradient color
+		 *	// to the position of the mouse:
+		 *	path.fillColor.highlight = event.point;
 		 * }
 		 */
 
@@ -1029,6 +1033,227 @@ var Color = Base.extend(new function() {
 				return new Color(random(), random(), random());
 			}
 		}
+	});
+}, new function() {
+	function clamp(value, hue) {
+		return value < 0
+				? 0
+				: hue && value > 360
+					? 360
+					: !hue && value > 1
+						? 1
+						: value;
+	}
+
+	var operators = {
+		add: function(a, b, hue) {
+			return clamp(a + b, hue);
+		},
+
+		subtract: function(a, b, hue) {
+			return clamp(a - b, hue);
+		},
+
+		multiply: function(a, b, hue) {
+			return clamp(a * b, hue);
+		},
+
+		divide: function(a, b, hue) {
+			return clamp(a / b, hue);
+		}
+	};
+
+	return Base.each(operators, function(operator, name) {
+		// Tell the argument reader not to parse values for multiply and divide,
+		// so the are not clamped yet.
+		var options = { dontParse: /^(multiply|divide)$/.test(name) };
+
+		this[name] = function(color) {
+			color = Color.read(arguments, 0, 0, options);
+			var type = this._type,
+				properties = this._properties,
+				components1 = this._components,
+				components2 = color._convert(type);
+			for (var i = 0, l = components1.length; i < l; i++)
+				components2[i] = operator(components1[i], components2[i],
+						properties[i] === 'hue');
+			return new Color(type, components2,
+					this._alpha != null
+							? operator(this._alpha, color.getAlpha())
+							: null);
+		};
+	}, /** @lends Color# */{
+		/**
+		 * Returns the addition of the supplied value to both coordinates of
+		 * the color as a new color.
+		 * The object itself is not modified!
+		 *
+		 * @name Color#add
+		 * @function
+		 * @operator
+		 * @param {Number} number the number to add
+		 * @return {Color} the addition of the color and the value as a new color
+		 *
+		 * @example
+		 * var color = new Color(0.5, 1, 1);
+		 * var result = color + 1;
+		 * console.log(result); // { red: 1, blue: 1, green: 1 }
+		 */
+		/**
+		 * Returns the addition of the supplied color to the color as a new
+		 * color.
+		 * The object itself is not modified!
+		 *
+		 * @name Color#add
+		 * @function
+		 * @operator
+		 * @param {Color} color the color to add
+		 * @return {Color} the addition of the two colors as a new color
+		 *
+		 * @example
+		 * var color1 = new Color(0, 1, 1);
+		 * var color2 = new Color(1, 0, 0);
+		 * var result = color1 + color2;
+		 * console.log(result); // { red: 1, blue: 1, green: 1 }
+		 */
+		/**
+		 * Returns the subtraction of the supplied value to both coordinates of
+		 * the color as a new color.
+		 * The object itself is not modified!
+		 *
+		 * @name Color#subtract
+		 * @function
+		 * @operator
+		 * @param {Number} number the number to subtract
+		 * @return {Color} the subtraction of the color and the value as a new
+		 *         color
+		 *
+		 * @example
+		 * var color = new Color(0.5, 1, 1);
+		 * var result = color - 1;
+		 * console.log(result); // { red: 0, blue: 0, green: 0 }
+		 */
+		/**
+		 * Returns the subtraction of the supplied color to the color as a new
+		 * color.
+		 * The object itself is not modified!
+		 *
+		 * @name Color#subtract
+		 * @function
+		 * @operator
+		 * @param {Color} color the color to subtract
+		 * @return {Color} the subtraction of the two colors as a new color
+		 *
+		 * @example
+		 * var color1 = new Color(0, 1, 1);
+		 * var color2 = new Color(1, 0, 0);
+		 * var result = color1 - color2;
+		 * console.log(result); // { red: 0, blue: 1, green: 1 }
+		 */
+		/**
+		 * Returns the multiplication of the supplied value to both coordinates
+		 * of the color as a new color.
+		 * The object itself is not modified!
+		 *
+		 * @name Color#multiply
+		 * @function
+		 * @operator
+		 * @param {Number} number the number to multiply
+		 * @return {Color} the multiplication of the color and the value as a
+		 *         new color
+		 *
+		 * @example
+		 * var color = new Color(0.5, 1, 1);
+		 * var result = color * 0.5;
+		 * console.log(result); // { red: 0.25, blue: 0.5, green: 0.5 }
+		 */
+		/**
+		 * Returns the multiplication of the supplied color to the color as a
+		 * new color.
+		 * The object itself is not modified!
+		 *
+		 * @name Color#multiply
+		 * @function
+		 * @operator
+		 * @param {Color} color the color to multiply
+		 * @return {Color} the multiplication of the two colors as a new color
+		 *
+		 * @example
+		 * var color1 = new Color(0, 1, 1);
+		 * var color2 = new Color(0.5, 0, 0.5);
+		 * var result = color1 * color2;
+		 * console.log(result); // { red: 0, blue: 0, green: 0.5 }
+		 */
+		/**
+		 * Returns the division of the supplied value to both coordinates of
+		 * the color as a new color.
+		 * The object itself is not modified!
+		 *
+		 * @name Color#divide
+		 * @function
+		 * @operator
+		 * @param {Number} number the number to divide
+		 * @return {Color} the division of the color and the value as a new
+		 *         color
+		 *
+		 * @example
+		 * var color = new Color(0.5, 1, 1);
+		 * var result = color / 2;
+		 * console.log(result); // { red: 0.25, blue: 0.5, green: 0.5 }
+		 */
+		/**
+		 * Returns the division of the supplied color to the color as a new
+		 * color.
+		 * The object itself is not modified!
+		 *
+		 * @name Color#divide
+		 * @function
+		 * @operator
+		 * @param {Color} color the color to divide
+		 * @return {Color} the division of the two colors as a new color
+		 *
+		 * @example
+		 * var color1 = new Color(0, 1, 1);
+		 * var color2 = new Color(0.5, 0, 0.5);
+		 * var result = color1 / color2;
+		 * console.log(result); // { red: 0, blue: 0, green: 1 }
+		 */
+		/**
+		 * {@grouptitle RGB Components}
+		 *
+		 * The amount of red in the color as a value between {@code 0} and
+		 * {@code 1}.
+		 *
+		 * @name Color#red
+		 * @property
+		 * @type Number
+		 *
+		 * @example {@paperscript}
+		 * // Changing the amount of red in a color:
+		 * var circle = new Path.Circle(new Point(80, 50), 30);
+		 * circle.fillColor = 'blue';
+		 *
+		 * // Blue + red = purple:
+		 * circle.fillColor.red = 1;
+		 */
+		/**
+		 * The amount of green in the color as a value between {@code 0} and
+		 * {@code 1}.
+		 *
+		 * @name Color#green
+		 * @property
+		 * @type Number
+		 *
+		 * @example {@paperscript}
+		 * // Changing the amount of green in a color:
+		 * var circle = new Path.Circle(new Point(80, 50), 30);
+		 *
+		 * // First we set the fill color to red:
+		 * circle.fillColor = 'red';
+		 *
+		 * // Red + green = yellow:
+		 * circle.fillColor.green = 1;
+		 */
 	});
 });
 
@@ -1050,4 +1275,4 @@ Base.each(Color._types, function(properties, type) {
 		var acronym = type.toUpperCase();
 		Color[acronym] = this[acronym + 'Color'] = ctor;
 	}
-}, this);
+}, Base.exports);

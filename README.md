@@ -8,26 +8,52 @@ If you want to work with Paper.js, simply download the latest "stable" version f
 - Twitter: [@paperjs](http://twitter.com/paperjs)
 - Daily development builds: <http://paperjs.org/download/>
 
+## Installing Paper.js
+
+You can download prebuilt packages from <http://paperjs.org/download/>.
+
+As of July 2013, the recommended way to install and maintain Paper.js is through Bower for browsers, and through NPM for Node.js.
+
+See <http://madebyhoundstooth.com/blog/install-node-with-homebrew-on-os-x/> for a tutorial explaining how to install Node.js, NPM and Bower on OSX.
+
+With Bower installed, simply type this command in your project folder:
+
+	bower install paper
+
+Upon execution, you will find a `paper` folder inside the project's `component` folder. For more information on Bower and to learn about its features for dependence tracking, see <http://bower.io/>.
+
+## Installing for Node.js
+
+Similarly you can use NPM to install Paper.js for Node.js. But before doing so, you need the Cairo Graphics library installed, see <http://cairographics.org/>.
+
+The easiest way to install Cairo on OSX is through Homebrew <http://mxcl.github.io/homebrew/>.
+
+	brew install cairo
+
+Once Homebrew has installed this for you, you can then install the Paper.js module:
+
+	npm install paper
+
+Note that currently there is an issue on OSX with Cairo. If the above causes errors, the following will most likely fix it:
+
+	PKG_CONFIG_PATH=/opt/X11/lib/pkgconfig/ npm insetall paper
+
+Also, whenever you would like to update the modules, you will need to execute:
+
+	PKG_CONFIG_PATH=/opt/X11/lib/pkgconfig/ npm update
+
 ## Development
 
 **Get the source (for building):**
 
-Git 1.6.5 and later:
-
-    git clone --recursive git://github.com/paperjs/paper.js.git
-
-Git 1.6.4 and earlier:
-
-	git clone git://github.com/paperjs/paper.js.git
-	cd paper.js
-	git submodule update --init
+	git clone --recursive git://github.com/paperjs/paper.js.git
 
 **Get the source (for contributing):**
 
 If you want to contribute to the project you will have to [make a fork](http://help.github.com/forking/). Then do this:
 
-    git clone --recursive git@github.com:yourusername/paper.js.git
-    git remote add upstream git://github.com/paperjs/paper.js.git
+	git clone --recursive git@github.com:yourusername/paper.js.git
+	git remote add upstream git://github.com/paperjs/paper.js.git
 
 ### Refreshing Your Clone
 
@@ -45,22 +71,34 @@ To update the `jsdoc-toolkit` submodule inside the `build` folder, used to gener
 
 ### Building the Library
 
-The Paper.js sources are distributed across many separate files, organised in subfolders inside the `src` folder. To compile them all into one distributable file, yo need to run the `build.sh` script inside the `build` folder:
+Paper.js has a couple of dependencies as Bower and NPM modules. See <http://madebyhoundstooth.com/blog/install-node-with-homebrew-on-os-x/> for a tutorial explaining how to install Node.js, NPM and Bower on OSX.
+
+In order to be able to build Paper.js, these dependencies need to be installed first after checking out the repository:
+
+	npm install
+	bower install
+
+Next you need to create minified versions of some of these dependencies. This is handled by the `minify-components.sh` script inside the `build` folder:
+
+	cd build
+	./minify-components.sh
+
+The Paper.js sources are distributed across many separate files, organised in subfolders inside the `src` folder. To compile them all into one distributable file, you can run the `build.sh` script inside the `build` folder:
 
 	cd build
 	./build.sh
 
 You will then find the built library inside the `dist` folder, named `paper.js`.
 
-`build.sh` offer a row of modes:
+`build.sh` offer two modes:
 
 	commented		Preprocessed but still formated and commented
 	stripped		Formated but without comments (default)
-	compressed		Uses UglifyJS to reduce file size
 
-In order to build a compressed version of Paper.js, UglifyJS2 needs to be installed:
+In order to minify the resulting built versions, you can run the `minify.sh` script:
 
-    npm install uglify-js
+	cd build
+	./minify.sh
 
 ### Building the Documentation
 
@@ -83,7 +121,7 @@ And to go back to a built library
 	cd build
 	./build.sh
 
-Note that your PaperScripts examples do not need to change, they can simply load `dist/paper.js`, which will always do the right rhing.
+Note that your PaperScripts examples do not need to change, they can simply load `dist/paper.js`, which will always do the right rhing. Note also that `src/load.js` handles both browsers and Node.js, through the handy PrePro library <http://github.com/lehni/prepro.js>.
 
 ### Testing
 

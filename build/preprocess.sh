@@ -14,7 +14,7 @@
 #
 # A simple code preprocessing wrapper that uses a combination of cpp, jssrip.py
 # and sed to preprocess JavaScript files containing C-style preprocess macros
-# (#include, #ifdef, etc.). Three options offer control over wether comments
+# (#include, #ifdef, etc.). Three options offer control over whether comments
 # are preserved or stripped and whitespaces are compressed.
 #
 # Usage:
@@ -36,7 +36,7 @@ OPTIONS=$(printf '%q' $(node -e "
 	process.stdout.write(JSON.stringify(options));
 "))
 # Build the prepo.js command out of it, passing on version and date as defines:
-COMMAND="./prepro.js -d $OPTIONS -d '{ \"version\": \"$VERSION\", \"date\": \"$DATE\", \"stats\": false }' $3 $2"
+COMMAND="../node_modules/.bin/prepro -o $OPTIONS -o '{ \"version\": \"$VERSION\", \"date\": \"$DATE\", \"stats\": false }' $3 $2"
 
 case $1 in
 	commented)

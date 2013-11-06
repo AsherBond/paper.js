@@ -20,6 +20,7 @@
  * @extends Item
  */
 var Group = Item.extend(/** @lends Group# */{
+	_class: 'Group',
 	_serializeFields: {
 		children: []
 	},
@@ -71,8 +72,8 @@ var Group = Item.extend(/** @lends Group# */{
 	 * Creates a new Group item and places it at the top of the active layer.
 	 *
 	 * @name Group#initialize
-	 * @param {Object} object An object literal containing properties to be
-	 * set on the Group.
+	 * @param {Object} object an object literal containing the properties to be
+	 * set on the group.
 	 *
 	 * @example {@paperscript}
 	 * var path = new Path([100, 100], [100, 200]);
@@ -88,11 +89,10 @@ var Group = Item.extend(/** @lends Group# */{
 	 * });
 	 */
 	initialize: function Group(arg) {
-		Item.call(this);
 		// Allow Group to have children and named children
 		this._children = [];
 		this._namedChildren = {};
-		if (arg && !this._set(arg))
+		if (!this._initialize(arg))
 			this.addChildren(Array.isArray(arg) ? arg : arguments);
 	},
 
@@ -126,7 +126,7 @@ var Group = Item.extend(/** @lends Group# */{
 
 	/**
 	 * Specifies whether the group applies transformations directly to its
-	 * children, or wether they are to be stored in its {@link Item#matrix}
+	 * children, or whether they are to be stored in its {@link Item#matrix}
 	 *
 	 * @type Boolean
 	 * @default true

@@ -43,6 +43,7 @@
  * }
  */
 var Tool = PaperScopeItem.extend(/** @lends Tool# */{
+	_class: 'Tool',
 	_list: 'tools',
 	_reference: '_tool', // PaperScope has accessor for #tool
 	_events: [ 'onActivate', 'onDeactivate', 'onEditOptions',
@@ -303,7 +304,7 @@ var Tool = PaperScopeItem.extend(/** @lends Tool# */{
 		}
 		// Make sure mousemove events have lastPoint set even for the first move
 		// so event.delta is always defined for them.
-		// TODO: Decide wether mousedown also should always have delta set.
+		// TODO: Decide whether mousedown also should always have delta set.
 		this._lastPoint = start && type == 'mousemove' ? point : this._point;
 		this._point = point;
 		switch (type) {
@@ -408,7 +409,8 @@ var Tool = PaperScopeItem.extend(/** @lends Tool# */{
 	 * 
 	 * Attach an event handler to the tool.
 	 *
-	 * @name Tool#on
+	 * @name Tool#attach
+	 * @alias Tool#on
 	 * @function
 	 * @param {String('mousedown', 'mouseup', 'mousedrag', 'mousemove',
 	 * 'keydown', 'keyup')} type the event type
@@ -418,9 +420,10 @@ var Tool = PaperScopeItem.extend(/** @lends Tool# */{
 	/**
 	 * Attach one or more event handlers to the tool.
 	 *
-	 * @name Tool#on^2
+	 * @name Tool#attach
+	 * @alias Tool#on
 	 * @function
-	 * @param {Object} param An object literal containing one or more of the
+	 * @param {Object} param an object literal containing one or more of the
 	 * following properties: {@code mousedown, mouseup, mousedrag, mousemove,
 	 * keydown, keyup}.
 	 */
@@ -429,6 +432,7 @@ var Tool = PaperScopeItem.extend(/** @lends Tool# */{
 	 * Detach an event handler from the tool.
 	 *
 	 * @name Tool#detach
+	 * @alias Tool#off
 	 * @function
 	 * @param {String('mousedown', 'mouseup', 'mousedrag', 'mousemove',
 	 * 'keydown', 'keyup')} type the event type
@@ -437,9 +441,10 @@ var Tool = PaperScopeItem.extend(/** @lends Tool# */{
 	/**
 	 * Detach one or more event handlers from the tool.
 	 *
-	 * @name Tool#detach^2
+	 * @name Tool#detach
+	 * @alias Tool#off
 	 * @function
-	 * @param {Object} param An object literal containing one or more of the
+	 * @param {Object} param an object literal containing one or more of the
 	 * following properties: {@code mousedown, mouseup, mousedrag, mousemove,
 	 * keydown, keyup}
 	 */
@@ -448,10 +453,11 @@ var Tool = PaperScopeItem.extend(/** @lends Tool# */{
 	 * Fire an event on the tool.
 	 *
 	 * @name Tool#fire
+	 * @alias Tool#trigger
 	 * @function
 	 * @param {String('mousedown', 'mouseup', 'mousedrag', 'mousemove',
 	 * 'keydown', 'keyup')} type the event type
-	 * @param {Object} event An object literal containing properties describing
+	 * @param {Object} event an object literal containing properties describing
 	 * the event.
 	 */
 

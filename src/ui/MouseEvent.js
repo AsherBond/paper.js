@@ -23,6 +23,8 @@
  * @extends Event
  */
 var MouseEvent = Event.extend(/** @lends MouseEvent# */{
+	_class: 'MouseEvent',
+
 	initialize: function MouseEvent(type, event, point, target, delta) {
 		Event.call(this, event);
 		this.type = type;
@@ -60,7 +62,7 @@ var MouseEvent = Event.extend(/** @lends MouseEvent# */{
 	 */
 
 	/**
-	 * @return {String} A string representation of the mouse event.
+	 * @return {String} a string representation of the mouse event
 	 */
 	toString: function() {
 		return "{ type: '" + this.type

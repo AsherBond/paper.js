@@ -27,6 +27,7 @@
  * etc.
  */
 var CurveLocation = Base.extend(/** @lends CurveLocation# */{
+	_class: 'CurveLocation',
 	// DOCS: CurveLocation class description: add these back when the  mentioned
 	// functioned have been added: {@link Path#split(location)}
 	/**
@@ -246,16 +247,16 @@ var CurveLocation = Base.extend(/** @lends CurveLocation# */{
 
 	divide: function() {
 		var curve = this.getCurve(true);
-		return curve && curve.divide(this.getParameter(true));
+		return curve && curve.divide(this.getParameter(true), true);
 	},
 
 	split: function() {
 		var curve = this.getCurve(true);
-		return curve && curve.split(this.getParameter(true));
+		return curve && curve.split(this.getParameter(true), true);
 	},
 
 	/**
-	 * @return {String} A string representation of the curve location.
+	 * @return {String} a string representation of the curve location
 	 */
 	toString: function() {
 		var parts = [],

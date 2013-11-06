@@ -22,6 +22,7 @@
  * @extends Event
  */
 var ToolEvent = Event.extend(/** @lends ToolEvent# */{
+	_class: 'ToolEvent',
 	// Have ToolEvent#item fall back to returning null, not undefined.
 	_item: null,
 
@@ -117,7 +118,7 @@ var ToolEvent = Event.extend(/** @lends ToolEvent# */{
 			// (point + lastPoint) / 2
 			return this.tool._point.add(this.tool._lastPoint).divide(2);
 		}
-		return this.middlePoint;
+		return this._middlePoint;
 	},
 
 	setMiddlePoint: function(middlePoint) {
@@ -198,7 +199,7 @@ var ToolEvent = Event.extend(/** @lends ToolEvent# */{
 	},
 
 	/**
-	 * @return {String} A string representation of the tool event.
+	 * @return {String} a string representation of the tool event
 	 */
 	toString: function() {
 		return '{ type: ' + this.type

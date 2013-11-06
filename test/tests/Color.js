@@ -73,22 +73,22 @@ test('Creating Colors', function() {
 
 test('Deprecated Colors Constructors', function() {
 
-	compareColors(new RgbColor('#ff0000'), new Color(1, 0, 0),
+	compareColors(new paper.RgbColor('#ff0000'), new Color(1, 0, 0),
 			'Color from hex code');
 
-	compareColors(new RgbColor(1, 0, 1),
+	compareColors(new paper.RgbColor(1, 0, 1),
 			new Color(1, 0, 1), 'Color from rgb object literal');
 
-	compareColors(new GrayColor(0.2),
+	compareColors(new paper.GrayColor(0.2),
 			new Color(0.2), 'Color from gray object literal');
 
-	compareColors(new HsbColor(0, 1, 1),
+	compareColors(new paper.HsbColor(0, 1, 1),
 			new Color(1, 0, 0).convert('hsb'), 'Color from hsb object literal');
 
-	compareColors(new RgbColor([1, 0, 0]), new Color(1, 0, 0),
+	compareColors(new paper.RgbColor([1, 0, 0]), new Color(1, 0, 0),
 			'Rgb Color from array');
 
-	compareColors(new GrayColor([1]), new Color(1),
+	compareColors(new paper.GrayColor([1]), new Color(1),
 			'Gray Color from array');
 });
 
@@ -193,3 +193,40 @@ test('Saturation from black rgb', function() {
 		return new Color(0, 0, 0).saturation === 0;
 	}, true);
 });
+
+test('Color#add', function() {
+	var color = new Color(0, 1, 1);
+	compareColors(color.add([1, 0, 0]), [1, 1, 1]);
+	compareColors(color.add([1, 0.5, 0]), [1, 1, 1]);
+	var color = new Color(0, 0.5, 0);
+	compareColors(color.add(0.5), [0.5, 1, 0.5]);
+});
+
+test('Color#subtract', function() {
+	var color = new Color(0, 1, 1);
+	compareColors(color.subtract([0, 1, 1]), [0, 0, 0]);
+	compareColors(color.subtract([0, 0.5, 1]), [0, 0.5, 0]);
+	var color = new Color(1, 1, 1);
+	compareColors(color.subtract(0.5), [0.5, 0.5, 0.5]);
+});
+
+test('Color#multiply', function() {
+	var color = new Color(1, 0.5, 0.25);
+	compareColors(color.multiply([0.25, 0.5, 1]), [0.25, 0.25, 0.25]);
+	var color = new Color(1, 1, 1);
+	compareColors(color.multiply(0.5), [0.5, 0.5, 0.5]);
+	var color = new Color(0.5, 0.5, 0.5);
+	compareColors(color.multiply(2), [1, 1, 1]);
+});
+
+test('Color#divide', function() {
+	var color = new Color(1, 1, 1);
+	compareColors(color.divide([1, 2, 4]), [1, 0.5, 0.25]);
+	var color = new Color(1, 0.5, 0.25);
+	compareColors(color.divide(0.25), [1, 1, 1]);
+	var color = new Color(1, 1, 1);
+	compareColors(color.divide(4), [0.25, 0.25, 0.25]);
+});
+
+
+

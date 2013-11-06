@@ -69,21 +69,27 @@ var Style = Base.extend(new function() {
 	// windingRule / resolution / fillOverprint / strokeOverprint are currently
 	// not supported.
 	var defaults = {
-		// path styles
+		// Paths
 		fillColor: undefined,
 		strokeColor: undefined,
-		selectedColor: undefined,
 		strokeWidth: 1,
 		strokeCap: 'butt',
 		strokeJoin: 'miter',
 		miterLimit: 10,
 		dashOffset: 0,
 		dashArray: [],
-		// character styles
+		windingRule: 'nonzero',
+		// Shadows
+		shadowColor: undefined,
+		shadowBlur: 0,
+		shadowOffset: new Point(),
+		// Selection
+		selectedColor: undefined,
+		// Characters
 		font: 'sans-serif',
 		fontSize: 12,
 		leading: null,
-		// paragraph styles
+		// Paragraphs
 		justification: 'left'
 	};
 
@@ -125,8 +131,6 @@ var Style = Base.extend(new function() {
 		//   raw value is stored, and conversion only happens in the getter.
 		fields[set] = function(value) {
 			var children = this._item && this._item._children;
-			// Clone color objects since they reference their owner
-			// value = isColor ? Color.read(arguments, 0, 0, true) : value;
 			// Only unify styles on children of Groups, excluding CompoundPaths.
 			if (children && children.length > 0
 					&& this._item._type !== 'compound-path') {
@@ -138,8 +142,14 @@ var Style = Base.extend(new function() {
 					if (isColor) {
 						if (old)
 							delete old._owner;
-						if (value && value.constructor === Color)
+						if (value && value.constructor === Color) {
+							// Clone color if it already has an owner.
+							// NOTE: If value is not a Color, it is only
+							// converted and cloned in the getter further down.
+							if (value._owner)
+								value = value.clone();
 							value._owner = this._item;
+						}
 					}
 					// Note: We do not convert the values to Colors in the 
 					// setter. This only happens once the getter is called.
@@ -169,7 +179,7 @@ var Style = Base.extend(new function() {
 				} else if (isColor && !(value && value.constructor === Color)) {
 					// Convert to a Color and stored result of conversion.
 					this._values[key] = value = Color.read(
-							[value], 0, 0, true, true); // readNull, clone);
+							[value], 0, 0, { readNull: true, clone: true });
 					if (value)
 						value._owner = this._item;
 				}
@@ -202,6 +212,8 @@ var Style = Base.extend(new function() {
 	Item.inject(item);
 	return fields;
 }, /** @lends Style# */{
+	_class: 'Style',
+
 	initialize: function Style(style, _item) {
 		// We keep values in a separate object that we can iterate over.
 		this._values = {};
@@ -230,6 +242,29 @@ var Style = Base.extend(new function() {
 		}
 	},
 
+	equals: function(style) {
+		return style === this || style && this._class === style._class
+				&& Base.equals(this._values, style._values)
+				|| false;
+	},
+
+	// DOCS: Style#hasFill()
+	hasFill: function() {
+		return !!this.getFillColor();
+	},
+
+	// DOCS: Style#hasStroke()
+	hasStroke: function() {
+		return !!this.getStrokeColor() && this.getStrokeWidth() > 0;
+	},
+
+	// DOCS: Style#hasShadow()
+	hasShadow: function() {
+		return !!this.getShadowColor() && this.getShadowBlur() > 0;
+	},
+
+	// Overrides
+
 	getLeading: function getLeading() {
 		// Override leading to return fontSize * 1.2 by default.
 		var leading = getLeading.base.call(this);
@@ -238,8 +273,12 @@ var Style = Base.extend(new function() {
 
 	getFontStyle: function() {
 		var size = this.getFontSize();
-		return (/[a-z]/i.test(size) ? size + ' ' : size + 'px ')
-				+ this.getFont();
+		// To prevent an obscure iOS 7 crash, we have to convert the size to a
+		// string first before passing it to the regular expression.
+		// This nonsensical statement would also prevent the bug, prooving that
+		// the issue is not the regular expression itself, but something deeper
+		// down in the optimizer: if (size === 0) size = 0;
+		return size + (/[a-z]/i.test(size + '') ? ' ' : 'px ') + this.getFont();
 	}
 
 	// DOCS: why isn't the example code showing up?
@@ -249,7 +288,7 @@ var Style = Base.extend(new function() {
 	 * to a Style object internally.
 	 *
 	 * @name Style#initialize
-	 * @param {object} style
+	 * @param {Object} style
 	 */
 
 	/**
@@ -413,6 +452,49 @@ var Style = Base.extend(new function() {
 	 *
 	 * // Set the fill color of the circle to RGB red:
 	 * circle.fillColor = new Color(1, 0, 0);
+	 */
+
+	/**
+	 * {@grouptitle Shadow Style}
+	 *
+	 * The shadow color.
+	 *
+	 * @property
+	 * @name Style#shadowColor
+	 * @type Color
+	 *
+	 * @example {@paperscript}
+	 * // Creating a circle with a black shadow:
+	 *
+	 * var circle = new Path.Circle({
+	 *     center: [80, 50],
+	 *     radius: 35,
+	 *     fillColor: 'white',
+	 *     // Set the shadow color of the circle to RGB black:
+	 *     shadowColor: new Color(0, 0, 0),
+	 *     // Set the shadow blur radius to 12:
+	 *     shadowBlur: 12,
+	 *     // Offset the shadow by { x: 5, y: 5 }
+	 *     shadowOffset: new Point(5, 5)
+	 * });
+	 */
+
+	/**
+	 * The shadow's blur radius.
+	 *
+	 * @property
+	 * @default 0
+	 * @name Style#shadowBlur
+	 * @type Number
+	 */
+
+	/**
+	 * The shadow's offset.
+	 *
+	 * @property
+	 * @default 0
+	 * @name Style#shadowOffset
+	 * @type Point
 	 */
 
 	/**

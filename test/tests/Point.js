@@ -75,6 +75,18 @@ test('set angle', function() {
     equals(point.angle, 92);
 });
 
+test('set angle & length', function() {
+	var point1 = new Point();
+	point1.length = Math.sqrt(2);
+	point1.angle = -45;
+
+	var point2 = new Point();
+	point2.angle = -45;
+	point2.length = Math.sqrt(2);
+
+	comparePoints(point2, point1);
+});
+
 test('getDirectedAngle(point)', function() {
 	var angle = new Point(10, 10).getDirectedAngle(new Point(1, 0));
 	equals(angle, -45);

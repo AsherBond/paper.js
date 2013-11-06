@@ -10,5 +10,8 @@
 #
 # All rights reserved.
 
-uglifyjs ../lib/acorn.js -o ../lib/acorn-min.js -c -m -b ascii_only=true,beautify=false
-uglifyjs ../lib/esprima.js -o ../lib/esprima-min.js -c -m -b ascii_only=true,beautify=false
+# Generates TypeScript declaration file
+
+cd jsdoc-toolkit
+java -jar jsrun.jar app/run.js -c=conf/typescript.conf
+cd ..

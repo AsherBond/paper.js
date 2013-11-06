@@ -18,11 +18,45 @@
  * @private
  */
 var SegmentPoint = Point.extend({
+	initialize: function SegmentPoint(point, owner, key) {
+		var x, y, selected;
+		if (!point) {
+			x = y = 0;
+		} else if ((x = point[0]) !== undefined) { // Array-like
+			y = point[1];
+		} else {
+			// If not Point-like already, read Point from arguments
+			if ((x = point.x) === undefined) {
+				point = Point.read(arguments);
+				x = point.x;
+			}
+			y = point.y;
+			selected = point.selected;
+		}
+		this._x = x;
+		this._y = y;
+		this._owner = owner;
+		// We have to set the owner's property that points to this point already
+		// now, so #setSelected(true) can work.
+		owner[key] = this;
+		if (selected)
+			this.setSelected(true);
+	},
+
 	set: function(x, y) {
 		this._x = x;
 		this._y = y;
 		this._owner._changed(this);
 		return this;
+	},
+
+	_serialize: function(options) {
+		var f = options.formatter,
+			x = f.number(this._x),
+			y = f.number(this._y);
+		return this.isSelected()
+				? { x: x, y: y, selected: true }
+				: [x, y];
 	},
 
 	getX: function() {
@@ -56,34 +90,5 @@ var SegmentPoint = Point.extend({
 
 	isSelected: function() {
 		return this._owner._isSelected(this);
-	},
-
-	statics: {
-		create: function(segment, key, pt) {
-			var point = Base.create(SegmentPoint),
-				x, y, selected;
-			if (!pt) {
-				x = y = 0;
-			} else if ((x = pt[0]) !== undefined) { // Array-like
-				y = pt[1];
-			} else {
-				// If not Point-like already, read Point from pt = 3rd argument
-				if ((x = pt.x) === undefined) {
-					pt = Point.read(arguments, 2);
-					x = pt.x;
-				}
-				y = pt.y;
-				selected = pt.selected;
-			}
-			point._x = x;
-			point._y = y;
-			point._owner = segment;
-			// We need to set the point on the segment before copying over the
-			// selected state, as otherwise this won't actually select it.
-			segment[key] = point;
-			if (selected)
-				point.setSelected(true);
-			return point;
-		}
 	}
 });

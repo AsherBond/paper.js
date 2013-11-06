@@ -215,41 +215,56 @@ var BlendMode = new function() {
 		}
 	};
 
-	// Build a lookup table for natively supported CSS blend-modes. Just seeing
-	// if globalCompositeOperation is actually sticky is not enough, as Chome 27
-	// pretends for blend-modes to work, but does not actually apply them. 
-	var ctx = CanvasProvider.getContext(1, 1);
-	// Multiply #300 (51) and #a00 (170) and see if we get #200 (34)
-	ctx.fillStyle = '#300';
-	ctx.fillRect(0, 0, 1, 1);
-	ctx.globalCompositeOperation = 'multiply';
-	ctx.fillStyle = '#a00';
-	ctx.fillRect(0, 0, 1, 1);
-	var data = ctx.getImageData(0, 0, 1, 1).data;
-	// If data[0] is 34, the mode has worked. Now feature-detect all modes that
-	// the browser claims to support.
-	this.nativeModes = data[0] === 34 && Base.each(modes, function(func, mode) {
-		ctx.globalCompositeOperation = mode;
-		this[mode] = ctx.globalCompositeOperation === mode;
+	// Build a lookup table for natively supported CSS composite- & blend-modes.
+	// The canvas composite modes are always natively supported:
+	var nativeModes = this.nativeModes = Base.each([
+		'source-over', 'source-in', 'source-out', 'source-atop',
+		'destination-over', 'destination-in', 'destination-out',
+		'destination-atop', 'lighter', 'darker', 'copy', 'xor'
+	], function(mode) {
+		this[mode] = true;
 	}, {});
+
+	// Now test for the new blend modes. Just seeing if globalCompositeOperation
+	// is sticky is not enough, as Chome 27 pretends for blend-modes to work,
+	// but does not actually apply them.
+	var ctx = CanvasProvider.getContext(1, 1);
+	Base.each(modes, function(func, mode) {
+		// Blend #330000 (51) and #aa0000 (170):
+		// Multiplying should lead to #220000 (34)
+		ctx.save();
+		// For darken we need to reverse color parameters in order to test mode.
+		var darken = mode === 'darken',
+			ok = false;
+		ctx.fillStyle = darken ? '#300' : '#a00';
+		ctx.fillRect(0, 0, 1, 1);
+		ctx.globalCompositeOperation = mode;
+		if (ctx.globalCompositeOperation === mode) {
+			ctx.fillStyle = darken ? '#a00' : '#300';
+			ctx.fillRect(0, 0, 1, 1);
+			ok = ctx.getImageData(0, 0, 1, 1).data[0] !== (darken ? 170 : 51);
+		}
+		nativeModes[mode] = ok; 
+		ctx.restore();
+	});
 	CanvasProvider.release(ctx);
 
-	this.process = function(blendMode, srcContext, dstContext, alpha, offset) {
+	this.process = function(mode, srcContext, dstContext, alpha, offset) {
 		var srcCanvas = srcContext.canvas,
-			normal = blendMode === 'normal';
+			normal = mode === 'normal';
 		// Use native blend-modes if supported, and fall back to emulation.
-		if (normal || this.nativeModes[blendMode]) {
+		if (normal || nativeModes[mode]) {
 			dstContext.save();
 			// Reset transformations, since we're blitting and pixel scale and
 			// with a given offset.
 			dstContext.setTransform(1, 0, 0, 1, 0, 0);
 			dstContext.globalAlpha = alpha;
 			if (!normal)
-				dstContext.globalCompositeOperation = blendMode;
+				dstContext.globalCompositeOperation = mode;
 			dstContext.drawImage(srcCanvas, offset.x, offset.y);
 			dstContext.restore();	
 		} else {
-			var process = modes[blendMode];
+			var process = modes[mode];
 			if (!process)
 				return;
 			var dstData = dstContext.getImageData(offset.x, offset.y,

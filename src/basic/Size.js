@@ -13,20 +13,23 @@
 /**
  * @name Size
  *
- * @class The Size object is used to describe the size of something, through
- * its {@link #width} and {@link #height} properties.
+ * @class The Size object is used to describe the size or dimensions of
+ * somethign, through its {@link #width} and {@link #height} properties.
  *
  * @classexample
- * // Create a size that is 10pt wide and 5pt high
+ * // Create a size that is 10pt wide and 5pt high,
+ * // and use it to define a rectangle:
  * var size = new Size(10, 5);
  * console.log(size.width); // 10
  * console.log(size.height); // 5
+ * var rect = new Rectangle(new Point(20, 15), size);
+ * console.log(rect); // { x: 20, y: 15, width: 10, height: 5 }
  */
 var Size = Base.extend(/** @lends Size# */{
+	_class: 'Size',
 	// Tell Base.read that the Point constructor supports reading with index
 	_readIndex: true,
 
-	// DOCS: improve Size class description
 	/**
 	 * Creates a Size object with the given width and height values.
 	 *
@@ -58,7 +61,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 * Creates a Size object using the properties in the given object.
 	 *
 	 * @name Size#initialize
-	 * @param {object} object
+	 * @param {Object} object
 	 *
 	 * @example
 	 * // Creating a size of width: 10, height: 20 using an object literal:
@@ -95,12 +98,12 @@ var Size = Base.extend(/** @lends Size# */{
 			var hasHeight = typeof arg1 === 'number';
 			this.width = arg0;
 			this.height = hasHeight ? arg1 : arg0;
-			if (this._read)
-				this._read = hasHeight ? 2 : 1;
+			if (this.__read)
+				this.__read = hasHeight ? 2 : 1;
 		} else if (type === 'undefined' || arg0 === null) {
 			this.width = this.height = 0;
-			if (this._read)
-				this._read = arg0 === null ? 1 : 0;
+			if (this.__read)
+				this.__read = arg0 === null ? 1 : 0;
 		} else {
 			if (Array.isArray(arg0)) {
 				this.width = arg0[0];
@@ -113,11 +116,11 @@ var Size = Base.extend(/** @lends Size# */{
 				this.height = arg0.y;
 			} else {
 				this.width = this.height = 0;
-				if (this._read)
-					this._read = 0;
+				if (this.__read)
+					this.__read = 0;
 			}
-			if (this._read)
-				this._read = 1;
+			if (this.__read)
+				this.__read = 1;
 		}
 	},
 
@@ -169,7 +172,7 @@ var Size = Base.extend(/** @lends Size# */{
 	},
 
 	/**
-	 * @return {String} A string representation of the size.
+	 * @return {String} a string representation of the size
 	 */
 	toString: function() {
 		var f = Formatter.instance;
@@ -190,6 +193,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#add
 	 * @function
+	 * @operator
 	 * @param {Number} number the number to add
 	 * @return {Size} the addition of the size and the value as a new size
 	 *
@@ -204,6 +208,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#add
 	 * @function
+	 * @operator
 	 * @param {Size} size the size to add
 	 * @return {Size} the addition of the two sizes as a new size
 	 *
@@ -225,6 +230,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#subtract
 	 * @function
+	 * @operator
 	 * @param {Number} number the number to subtract
 	 * @return {Size} the subtraction of the size and the value as a new size
 	 *
@@ -239,6 +245,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#subtract
 	 * @function
+	 * @operator
 	 * @param {Size} size the size to subtract
 	 * @return {Size} the subtraction of the two sizes as a new size
 	 *
@@ -259,6 +266,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#multiply
 	 * @function
+	 * @operator
 	 * @param {Number} number the number to multiply by
 	 * @return {Size} the multiplication of the size and the value as a new size
 	 *
@@ -273,6 +281,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#multiply
 	 * @function
+	 * @operator
 	 * @param {Size} size the size to multiply by
 	 * @return {Size} the multiplication of the two sizes as a new size
 	 *
@@ -293,6 +302,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#divide
 	 * @function
+	 * @operator
 	 * @param {Number} number the number to divide by
 	 * @return {Size} the division of the size and the value as a new size
 	 *
@@ -307,6 +317,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#divide
 	 * @function
+	 * @operator
 	 * @param {Size} size the size to divide by
 	 * @return {Size} the division of the two sizes as a new size
 	 *
@@ -327,6 +338,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#modulo
 	 * @function
+	 * @operator
 	 * @param {Number} value
 	 * @return {Size} the integer remainders of dividing the size by the value
 	 *                 as a new size
@@ -341,6 +353,7 @@ var Size = Base.extend(/** @lends Size# */{
 	 *
 	 * @name Size#modulo
 	 * @function
+	 * @operator
 	 * @param {Size} size
 	 * @return {Size} the integer remainders of dividing the sizes by each
 	 *                 other as a new size
@@ -377,6 +390,67 @@ var Size = Base.extend(/** @lends Size# */{
 		return isNaN(this.width) || isNaN(this.height);
 	},
 
+	/**
+	 * {@grouptitle Math Functions}
+	 *
+	 * Returns a new size with rounded {@link #width} and {@link #height}
+	 * values. The object itself is not modified!
+	 *
+	 * @name Size#round
+	 * @function
+	 * @return {Size}
+	 *
+	 * @example
+	 * var size = new Size(10.2, 10.9);
+	 * var roundSize = size.round();
+	 * console.log(roundSize); // {x: 10, y: 11}
+	 */
+
+	/**
+	 * Returns a new size with the nearest greater non-fractional values to the
+	 * specified {@link #width} and {@link #height} values. The object itself is
+	 * not modified!
+	 *
+	 * @name Size#ceil
+	 * @function
+	 * @return {Size}
+	 *
+	 * @example
+	 * var size = new Size(10.2, 10.9);
+	 * var ceilSize = size.ceil();
+	 * console.log(ceilSize); // {x: 11, y: 11}
+	 */
+
+	/**
+	 * Returns a new size with the nearest smaller non-fractional values to the
+	 * specified {@link #width} and {@link #height} values. The object itself is
+	 * not modified!
+	 *
+	 * @name Size#floor
+	 * @function
+	 * @return {Size}
+	 *
+	 * @example
+	 * var size = new Size(10.2, 10.9);
+	 * var floorSize = size.floor();
+	 * console.log(floorSize); // {x: 10, y: 10}
+	 */
+
+	/**
+	 * Returns a new size with the absolute values of the specified
+	 * {@link #width} and {@link #height} values. The object itself is not
+	 * modified!
+	 *
+	 * @name Size#abs
+	 * @function
+	 * @return {Size}
+	 *
+	 * @example
+	 * var size = new Size(-5, 10);
+	 * var absSize = size.abs();
+	 * console.log(absSize); // {x: 5, y: 10}
+	 */
+
 	statics: /** @lends Size */{
 		/**
 		 * Returns a new size object with the smallest {@link #width} and
@@ -385,7 +459,7 @@ var Size = Base.extend(/** @lends Size# */{
 		 * @static
 		 * @param {Size} size1
 		 * @param {Size} size2
-		 * @returns {Size} The newly created size object
+		 * @returns {Size} the newly created size object
 		 *
 		 * @example
 		 * var size1 = new Size(10, 100);
@@ -406,7 +480,7 @@ var Size = Base.extend(/** @lends Size# */{
 		 * @static
 		 * @param {Size} size1
 		 * @param {Size} size2
-		 * @returns {Size} The newly created size object
+		 * @returns {Size} the newly created size object
 		 *
 		 * @example
 		 * var size1 = new Size(10, 100);
@@ -424,7 +498,7 @@ var Size = Base.extend(/** @lends Size# */{
 		 * Returns a size object with random {@link #width} and {@link #height}
 		 * values between {@code 0} and {@code 1}.
 		 *
-		 * @returns {Size} The newly created size object
+		 * @returns {Size} the newly created size object
 		 * @static
 		 *
 		 * @example
@@ -436,87 +510,33 @@ var Size = Base.extend(/** @lends Size# */{
 			return new Size(Math.random(), Math.random());
 		}
 	}
-}, new function() { // Scope for injecting round, ceil, floor, abs:
-
-	/**
-	 * {@grouptitle Math Functions}
-	 *
-	 * Returns a new size with rounded {@link #width} and {@link #height} values.
-	 * The object itself is not modified!
-	 *
-	 * @name Size#round
-	 * @function
-	 * @return {Size}
-	 *
-	 * @example
-	 * var size = new Size(10.2, 10.9);
-	 * var roundSize = size.round();
-	 * console.log(roundSize); // {x: 10, y: 11}
-	 */
-
-	/**
-	 * Returns a new size with the nearest greater non-fractional values to the
-	 * specified {@link #width} and {@link #height} values. The object itself is not
-	 * modified!
-	 *
-	 * @name Size#ceil
-	 * @function
-	 * @return {Size}
-	 *
-	 * @example
-	 * var size = new Size(10.2, 10.9);
-	 * var ceilSize = size.ceil();
-	 * console.log(ceilSize); // {x: 11, y: 11}
-	 */
-
-	/**
-	 * Returns a new size with the nearest smaller non-fractional values to the
-	 * specified {@link #width} and {@link #height} values. The object itself is not
-	 * modified!
-	 *
-	 * @name Size#floor
-	 * @function
-	 * @return {Size}
-	 *
-	 * @example
-	 * var size = new Size(10.2, 10.9);
-	 * var floorSize = size.floor();
-	 * console.log(floorSize); // {x: 10, y: 10}
-	 */
-
-	/**
-	 * Returns a new size with the absolute values of the specified {@link #width}
-	 * and {@link #height} values. The object itself is not modified!
-	 *
-	 * @name Size#abs
-	 * @function
-	 * @return {Size}
-	 *
-	 * @example
-	 * var size = new Size(-5, 10);
-	 * var absSize = size.abs();
-	 * console.log(absSize); // {x: 5, y: 10}
-	 */
-
-	return Base.each(['round', 'ceil', 'floor', 'abs'], function(name) {
-		var op = Math[name];
-		this[name] = function() {
-			return new Size(op(this.width), op(this.height));
-		};
-	}, {});
-});
+}, Base.each(['round', 'ceil', 'floor', 'abs'], function(name) {
+	// Inject round, ceil, floor, abs:
+	var op = Math[name];
+	this[name] = function() {
+		return new Size(op(this.width), op(this.height));
+	};
+}, {}));
 
 /**
  * @name LinkedSize
  *
  * @class An internal version of Size that notifies its owner of each change
  * through setting itself again on the setter that corresponds to the getter
- * that produced this LinkedSize. See uses of LinkedSize.create()
+ * that produced this LinkedSize.
  * Note: This prototype is not exported.
  *
  * @private
  */
 var LinkedSize = Size.extend({
+	// Have LinkedSize appear as a normal Size in debugging
+	initialize: function Size(width, height, owner, setter) {
+		this._width = width;
+		this._height = height;
+		this._owner = owner;
+		this._setter = setter;
+	},
+
 	set: function(width, height, dontNotify) {
 		this._width = width;
 		this._height = height;
@@ -541,19 +561,5 @@ var LinkedSize = Size.extend({
 	setHeight: function(height) {
 		this._height = height;
 		this._owner[this._setter](this);
-	},
-
-	statics: {
-		create: function(owner, setter, width, height, dontLink) {
-			// See LinkedPoint.create() for an explanation about dontLink.
-			if (dontLink)
-				return new Size(width, height);
-			var size = Base.create(LinkedSize);
-			size._width = width;
-			size._height = height;
-			size._owner = owner;
-			size._setter = setter;
-			return size;
-		}
 	}
 });

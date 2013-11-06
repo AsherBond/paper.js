@@ -13,8 +13,7 @@
  *
  ***
  *
- * Straps.js - Inheritance library with support for bean-style accessors and
- * AOP patterns.
+ * straps.js - Class inheritance library with support for bean-style accessors
  *
  * Copyright (c) 2006 - 2013 Juerg Lehni
  * http://lehni.org/
@@ -23,7 +22,7 @@
  *
  ***
  *
- * Acorn.js
+ * acorn.js
  * http://marijnhaverbeke.nl/acorn/
  *
  * Acorn is a tiny, fast JavaScript parser written in JavaScript,
@@ -31,12 +30,14 @@
  *
  */
 
-var paper = new function() {
+// Allow the minification of the undefined variable by defining it as a local
+// parameter inside the paper scope.
+var paper = new function(undefined) {
 // Inline Bootstrap core (the Base class) inside the paper scope first:
-/*#*/ include('../lib/straps.js');
+/*#*/ include('../bower_components/straps/straps.js', { exports: false });
 
 /*#*/ if (options.stats) {
-/*#*/ include('../lib/stats.js');
+/*#*/ include('../bower_components/stats.js/build/stats.min.js');
 /*#*/ } // options.stats
 
 /*#*/ if (options.version == 'dev') {
@@ -92,30 +93,43 @@ var paper = new function() {
 /*#*/ include('style/GradientStop.js');
 /*#*/ include('style/Style.js');
 
+/*#*/ if (options.environment == 'node') {
+/*#*/ include('dom/node.js');
+/*#*/ } // options.environment == 'node'
 /*#*/ include('dom/DomElement.js');
+/*#*/ if (options.environment == 'browser') {
+// DomEvent doesn't make sense outside of the browser (yet)
 /*#*/ include('dom/DomEvent.js');
+/*#*/ } // options.environment == 'browser'
 
 /*#*/ include('ui/View.js');
 /*#*/ include('ui/CanvasView.js');
 
-/*#*/ if (options.browser) {
+/*#*/ if (options.environment == 'browser') {
 /*#*/ include('ui/Event.js');
 /*#*/ include('ui/KeyEvent.js');
 /*#*/ include('ui/Key.js');
 /*#*/ include('ui/MouseEvent.js');
 
+/*#*/ if (options.palette) {
 /*#*/ include('ui/Palette.js');
 /*#*/ include('ui/Component.js');
+/*#*/ } // options.palette
 
 /*#*/ include('tool/ToolEvent.js');
 /*#*/ include('tool/Tool.js');
-/*#*/ } // options.browser
+
+// Http is used both for PaperScript and SVGImport
+/*#*/ if (options.paperscript || options.svg) {
+/*#*/ include('net/Http.js');
+/*#*/ } // options.paperscript || options.svg
+/*#*/ } // options.environment == 'browser'
 
 /*#*/ include('canvas/CanvasProvider.js');
 /*#*/ include('canvas/BlendMode.js');
 /*#*/ if (options.version == 'dev') {
 /*#*/ include('canvas/ProxyContext.js');
-/*#*/ } // options.browser
+/*#*/ } // options.environment == 'browser'
 
 /*#*/ if (options.svg) {
 /*#*/ include('svg/SVGStyles.js');
@@ -124,12 +138,12 @@ var paper = new function() {
 /*#*/ include('svg/SVGImport.js');
 /*#*/ } // options.svg
 
-/*#*/ include('core/PaperScript.js');
-
 /*#*/ include('export.js');
 return paper;
 };
 
-// Support AMD (e.g. require.js)
-if (typeof define === 'function' && define.amd)
-	define(paper);
+// include PaperScript separately outside the main paper scope, due to its use
+// of with(). This also simplifies making its inclusion optional.
+/*#*/ if (options.paperscript) {
+/*#*/ include('core/PaperScript.js');
+/*#*/ } // options.paperscript

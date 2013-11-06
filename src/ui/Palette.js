@@ -14,7 +14,8 @@
   * @name Palette
   * @class
   */
-var Palette = Base.extend(Callback, /** @lends Palette# */{
+/* var Palette = */ Base.extend(Callback, /** @lends Palette# */{
+	_class: 'Palette',
 	_events: [ 'onChange' ],
 
 	initialize: function Palette(title, components, values) {
@@ -22,7 +23,7 @@ var Palette = Base.extend(Callback, /** @lends Palette# */{
 			|| DomElement.find('body').appendChild(
 				DomElement.create('div', { 'class': 'palettejs-panel' }));
 		this._element = parent.appendChild(
-			DomElement.create('table', { 'class': 'palettejs-pane' })),
+			DomElement.create('table', { 'class': 'palettejs-pane' }));
 		this._title = title;
 		if (!values)
 			values = {};

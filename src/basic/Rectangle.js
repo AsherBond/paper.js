@@ -18,6 +18,7 @@
  * rectangular path, it is not an item.
  */
 var Rectangle = Base.extend(/** @lends Rectangle# */{
+	_class: 'Rectangle',
 	// Tell Base.read that the Rectangle constructor supports reading with index
 	_readIndex: true,
 
@@ -32,8 +33,8 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	 * Creates a Rectangle object.
 	 *
 	 * @name Rectangle#initialize
-	 * @param {Object} object An object literal containing properties to be
-	 * set on the rectangle.
+	 * @param {Object} object an object containing properties to be set on the
+	 *        rectangle.
 	 * 
 	 * @example // Create a rectangle between {x: 20, y: 20} and {x: 80, y:80}
 	 * var rectangle = new Rectangle({
@@ -110,7 +111,7 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 			}
 		}
 		if (!read) {
-			// Read a point argument and look at the next value to see wether
+			// Read a point argument and look at the next value to see whether
 			// it's a size or a point, then read accordingly.
 			// We're supporting both reading from a normal arguments list and
 			// covering the Rectangle({ from: , to: }) constructor, through
@@ -142,8 +143,8 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 			}
 			read = arguments._index;
 		}
-		if (this._read)
-			this._read = read;
+		if (this.__read)
+			this.__read = read;
 	},
 
 	/**
@@ -174,7 +175,6 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	 * @type Number
 	 */
 
-	// DOCS: Why does jsdocs document this function, when there are no comments?
 	/**
 	 * @ignore
 	 */
@@ -205,12 +205,12 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 			rect = Rectangle.read(arguments);
 		return rect === this
 				|| rect && this.x === rect.x && this.y === rect.y
-					&& this.width === rect.width && this.height=== rect.height
+					&& this.width === rect.width && this.height === rect.height
 				|| false;
 	},
 
 	/**
-	 * @return {String} A string representation of this rectangle.
+	 * @return {String} a string representation of this rectangle
 	 */
 	toString: function() {
 		var f = Formatter.instance;
@@ -237,9 +237,8 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	 * @bean
 	 */
 	getPoint: function(/* dontLink */) {
-		// Pass on the optional argument _dontLink which tells LinkedPoint to
-		// produce a normal point instead. Used internally for speed reasons.
-		return LinkedPoint.create(this, 'setPoint', this.x, this.y, arguments[0]);
+		return new (arguments[0] ? Point : LinkedPoint)
+				(this.x, this.y, this, 'setPoint');
 	},
 
 	setPoint: function(point) {
@@ -256,8 +255,8 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	 * @bean
 	 */
 	getSize: function(/* dontLink */) {
-		return LinkedSize.create(this, 'setSize', this.width, this.height,
-				arguments[0]);
+		return new (arguments[0] ? Size : LinkedSize)
+				(this.width, this.height, this, 'setSize');
 	},
 
 	setSize: function(size) {
@@ -402,8 +401,8 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	 * @bean
 	 */
 	getCenter: function(/* dontLink */) {
-		return LinkedPoint.create(this, 'setCenter',
-				this.getCenterX(), this.getCenterY(), arguments[0]);
+		return new (arguments[0] ? Point : LinkedPoint)
+				(this.getCenterX(), this.getCenterY(), this, 'setCenter');
 	},
 
 	setCenter: function(point) {
@@ -648,8 +647,8 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	 *
 	 * @param {Rectangle} rect The rectangle to be intersected with this
 	 *                         rectangle
-	 * @return {Rectangle} The largest rectangle contained in both the specified
-	 *                     rectangle and in this rectangle.
+	 * @return {Rectangle} the largest rectangle contained in both the specified
+	 *                     rectangle and in this rectangle
 	 *
 	 * @example {@paperscript}
 	 * // Intersecting two rectangles and visualizing the result using rectangle
@@ -743,7 +742,7 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	 * {@code hor} amount and in vertical direction by the specified {@code ver}
 	 * amount.
 	 *
-	 * @name Rectangle#expand^2
+	 * @name Rectangle#expand
 	 * @function
 	 * @param {Number} hor
 	 * @param {Number} ver
@@ -767,7 +766,7 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 	 * {@code hor} amount and in vertical direction by the specified {@code ver}
 	 * amount from its center.
 	 *
-	 * @name Rectangle#scale^2
+	 * @name Rectangle#scale
 	 * @function
 	 * @param {Number} hor
 	 * @param {Number} ver
@@ -800,8 +799,8 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
 				get = 'get' + part,
 				set = 'set' + part;
 			this[get] = function(/* dontLink */) {
-				return LinkedPoint.create(this, set,
-						this[getX](), this[getY](), arguments[0]);
+				return new (arguments[0] ? Point : LinkedPoint)
+						(this[getX](), this[getY](), this, set);
 			};
 			this[set] = function(point) {
 				point = Point.read(arguments);
@@ -823,6 +822,13 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
  * @private
  */
 var LinkedRectangle = Rectangle.extend({
+	// Have LinkedRectangle appear as a normal Rectangle in debugging
+	initialize: function Rectangle(x, y, width, height, owner, setter) {
+		this.set(x, y, width, height, true);
+		this._owner = owner;
+		this._setter = setter;
+	},
+
 	set: function(x, y, width, height, dontNotify) {
 		this._x = x;
 		this._y = y;
@@ -831,22 +837,6 @@ var LinkedRectangle = Rectangle.extend({
 		if (!dontNotify)
 			this._owner[this._setter](this);
 		return this;
-	},
-
-	statics: {
-		/**
-		 * Provide a faster creator for Points out of two coordinates that
-		 * does not rely on Point#initialize at all. This speeds up all math
-		 * operations a lot.
-		 *
-		 * @ignore
-		 */
-		create: function(owner, setter, x, y, width, height) {
-			var rect = Base.create(LinkedRectangle).set(x, y, width, height, true);
-			rect._owner = owner;
-			rect._setter = setter;
-			return rect;
-		}
 	}
 }, new function() {
 	var proto = Rectangle.prototype;
@@ -871,7 +861,7 @@ var LinkedRectangle = Rectangle.extend({
 			'LeftCenter', 'TopCenter', 'RightCenter', 'BottomCenter'],
 		function(key) {
 			var name = 'set' + key;
-			this[name] = function(value) {
+			this[name] = function(/* value */) {
 				// Make sure the above setters of x, y, width, height do not
 				// each notify the owner, as we're going to take care of this
 				// afterwards here, only once per change.

@@ -23,6 +23,8 @@
  * @extends Group
  */
 var Layer = Group.extend(/** @lends Layer# */{
+	_class: 'Layer',
+
 	// DOCS: improve constructor code example.
 	/**
 	 * Creates a new Layer item and places it at the end of the
@@ -41,8 +43,9 @@ var Layer = Group.extend(/** @lends Layer# */{
 	 * {@link Project#layers} array. The newly created layer will be activated,
 	 * so all newly created items will be placed within it.
 	 *
-	 * @param {Object} object An object literal containing properties to
-	 * be set on the layer.
+	 * @name Layer#initialize
+	 * @param {Object} object an object literal containing the properties to be
+	 * set on the layer.
 	 *
 	 * @example {@paperscript}
 	 * var path = new Path([100, 100], [100, 200]);
@@ -56,7 +59,7 @@ var Layer = Group.extend(/** @lends Layer# */{
 	 * 	position: view.center
 	 * });
 	 */
-	initialize: function Layer(items) {
+	initialize: function Layer(/* items */) {
 		this._project = paper.project;
 		// Push it onto project.layers and set index:
 		this._index = this._project.layers.push(this) - 1;
@@ -110,26 +113,18 @@ var Layer = Group.extend(/** @lends Layer# */{
 	 */
 	activate: function() {
 		this._project.activeLayer = this;
-	}
-}, new function () {
-	function insert(above) {
-		return function insert(item) {
-			// If the item is a layer and contained within Project#layers, use
-			// our own version of move().
-			if (item instanceof Layer && !item._parent
-						&& this._remove(true)) {
-				Base.splice(item._project.layers, [this],
-						item._index + (above ? 1 : 0), 0);
-				this._setProject(item._project);
-				return true;
-			}
-			return insert.base.call(this, item);
-		};
-	}
+	},
 
-	return {
-		insertAbove: insert(true),
-
-		insertBelow: insert(false)
-	};
+	// Private helper for #insertAbove() / #insertBelow()
+	_insert: function _insert(above, item, _preserve) {
+		// If the item is a layer and contained within Project#layers, use
+		// our own version of move().
+		if (item instanceof Layer && !item._parent && this._remove(true)) {
+			Base.splice(item._project.layers, [this],
+					item._index + (above ? 1 : 0), 0);
+			this._setProject(item._project);
+			return this;
+		}
+		return _insert.base.call(this, above, item, _preserve);
+	}
 });

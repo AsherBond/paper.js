@@ -345,15 +345,17 @@ test('When a path is closed, the end of a path cannot be hit.', function() {
 });
 
 test('hitting path bounding box', function() {
-	var path = new Path.Circle(new Point(100, 100), 50);
+	var path = new Path.Circle({
+		center: [100, 100],
+		radius: 50,
+		fillColor: 'red'
+	});
 
 	var hitResult = paper.project.hitTest(path.bounds.topLeft, {
 		bounds: true
 	});
 
-	equals(function() {
-		return !!hitResult;
-	}, true, 'A HitResult should be returned (1)');
+	equals(!!hitResult, true, 'A HitResult should be returned');
 	
 	if (hitResult) {
 		equals(function() {
@@ -365,45 +367,63 @@ test('hitting path bounding box', function() {
 		}, 'top-left');
 
 		equals(function() {
-			return hitResult.point.toString();
-		}, path.bounds.topLeft.toString());
+			return hitResult.point;
+		}, path.bounds.topLeft);
+	}
+});
+
+test('hitting raster bounding box', function() {
+	var path = new Path.Circle({
+		center: [100, 100],
+		radius: 50,
+		fillColor: 'red'
+	});
+	var raster = path.rasterize();
+	path.remove();
+
+	var hitResult = paper.project.hitTest(raster.bounds.topLeft, {
+		bounds: true
+	});
+
+	equals(!!hitResult, true, 'A HitResult should be returned');
+	
+	if (hitResult) {
+		equals(function() {
+			return hitResult.type;
+		}, 'bounds');
+
+		equals(function() {
+			return hitResult.name;
+		}, 'top-left');
+
+		equals(function() {
+			return hitResult.point;
+		}, path.bounds.topLeft);
 	}
 });
 
 test('hitting guides', function() {
-	var path = new Path.Circle(new Point(100, 100), 50);
-	path.fillColor = 'red';
-
+	var path = new Path.Circle({
+		center: [100, 100],
+		radius: 50,
+		fillColor: 'red'
+	});
 	var copy = path.clone();
 
-	var hitResult = paper.project.hitTest(path.position);
+	var result = paper.project.hitTest(path.position);
 
-	equals(function() {
-		return !!hitResult;
-	}, true, 'A HitResult should be returned (1)');
-	
-	if (hitResult) {
-		equals(function() {
-			return hitResult.item == copy;
-		}, true, 'The copy is returned, because it is on top.');
-	}
+	equals(result && result.item, copy,
+			'The copy should be returned, because it is on top.');
 	
 	path.guide = true;
 	
-	var hitResult = paper.project.hitTest(path.position, {
+	var result = paper.project.hitTest(path.position, {
 		guides: true,
 		fill: true
 	});
 	
-	equals(function() {
-		return !!hitResult;
-	}, true, 'A HitResult should be returned (2)');
-	
-	if (hitResult) {
-		equals(function() {
-			return hitResult.item == path;
-		}, true, 'The path is returned, because it is a guide.');
-	}
+	equals(result && result.item, path,
+			'The path should be returned, because it is a guide.');
 });
 
 test('hitting raster items', function() {
@@ -538,6 +558,64 @@ test('Hit testing the corner of a rectangle with miter stroke.', function() {
 	});
 	equals(function() {
 		return rect.hitTest(rect.strokeBounds.topRight) != null;
+	}, true);
+});
+
+test('Hit testing invisible items.', function() {
+	var point = new Point(0, 0);
+	var circle1 = new Path.Circle({
+		center: point.subtract([25, 0]),
+		radius: 50,
+		fillColor: 'red'
+	});
+	var circle2 = new Path.Circle({
+		center: point.add([25, 0]),
+		radius: 50,
+		fillColor: 'blue'
+	});
+
+	equals(function() {
+		return paper.project.hitTest(point).item === circle2;
+	}, true);
+
+	circle2.visible = false;
+
+	equals(function() {
+		return paper.project.hitTest(point).item === circle1;
+	}, true);
+});
+
+test('Hit testing guides.', function() {
+	var point = new Point(0, 0);
+	var circle1 = new Path.Circle({
+		center: point.subtract([25, 0]),
+		radius: 50,
+		fillColor: 'red'
+	});
+	var circle2 = new Path.Circle({
+		center: point.add([25, 0]),
+		radius: 50,
+		fillColor: 'blue'
+	});
+
+	var strokePoint = circle2.bounds.leftCenter;
+
+	equals(function() {
+		return paper.project.hitTest(strokePoint).item === circle2;
+	}, true);
+
+	circle2.guide = true;
+
+	equals(function() {
+		return paper.project.hitTest(strokePoint).item === circle1;
+	}, true);
+
+	equals(function() {
+		var result = paper.project.hitTest(strokePoint, {
+			guides: true,
+			fill: true
+		});
+		return result && result.item === circle2;
 	}, true);
 });
 

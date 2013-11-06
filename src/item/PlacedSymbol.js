@@ -19,6 +19,7 @@
  * @extends Item
  */
 var PlacedSymbol = Item.extend(/** @lends PlacedSymbol# */{
+	_class: 'PlacedSymbol',
 	_transformContent: false,
 	// PlacedSymbol uses strokeBounds for bounds
 	_boundsGetter: { getBounds: 'getStrokeBounds' },
@@ -71,11 +72,15 @@ var PlacedSymbol = Item.extend(/** @lends PlacedSymbol# */{
 		// Support two forms of item initialization: Passing one object literal
 		// describing all the different properties to be set, or a symbol (arg0)
 		// and a point where it should be placed (arg1).
-		Item.call(this, arg1 !== undefined && Point.read(arguments, 1));
-		// If we can handle setting properties through object literal, we're all
-		// set. Otherwise we need to set symbol.
-		if (arg0 && !this._set(arg0))
+		// If _initialize can set properties through object literal, we're done.
+		// Otherwise we need to set symbol from arg0.
+		if (!this._initialize(arg0,
+				arg1 !== undefined && Point.read(arguments, 1)))
 			this.setSymbol(arg0 instanceof Symbol ? arg0 : new Symbol(arg0));
+	},
+
+	_equals: function(item) {
+		return this._symbol === item._symbol;
 	},
 
 	/**
@@ -97,8 +102,11 @@ var PlacedSymbol = Item.extend(/** @lends PlacedSymbol# */{
 		symbol._instances[this._id] = this;
 	},
 
-	clone: function() {
-		return this._clone(new PlacedSymbol(this.symbol));
+	clone: function(insert) {
+		return this._clone(new PlacedSymbol({
+			symbol: this.symbol,
+			insert: false
+		}), insert);
 	},
 
 	isEmpty: function() {

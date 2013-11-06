@@ -26,17 +26,19 @@
  * 
  * // Create a rectangle shaped path between
  * // the topLeft and bottomRight points:
- * var path = new Path.Rectangle(topLeft, bottomRight);
- * 
- * // Fill the path with a gradient of three evenly divided color stops
- * // that runs between the two points we defined earlier:
- * path.fillColor = {
- * 	gradient: {
- * 		stops: ['yellow', 'red', 'blue']
- * 	},
- * 	origin: topLeft,
- * 	destination: bottomRight
- * };
+ * var path = new Path.Rectangle({
+ * 	topLeft: topLeft,
+ * 	bottomRight: bottomRight,
+ * 	// Fill the path with a gradient of three color stops
+ * 	// that runs between the two points we defined earlier:
+ * 	fillColor: {
+ * 		gradient: {
+ * 			stops: ['yellow', 'red', 'blue']
+ * 		},
+ * 		origin: topLeft,
+ * 		destination: bottomRight
+ * 	}
+ * });
  * 
  * @classexample {@paperscript height=300}
  * // Create a circle shaped path at the center of the view,
@@ -60,6 +62,8 @@
  * };
  */
 var Gradient = Base.extend(/** @lends Gradient# */{
+	_class: 'Gradient',
+
 	// DOCS: Document #initialize()
 	initialize: function Gradient(stops, radial) {
 		// Define this Gradient's unique id.
@@ -176,8 +180,10 @@ var Gradient = Base.extend(/** @lends Gradient# */{
 	 * @return {Boolean} {@true they are equal}
 	 */
 	equals: function(gradient) {
-		if (gradient && gradient.constructor == this.constructor
-				&& this._stops.length == gradient._stops.length) {
+		if (gradient === this)
+			return true;
+		if (gradient &&  this._class === gradient._class
+				&& this._stops.length === gradient._stops.length) {
 			for (var i = 0, l = this._stops.length; i < l; i++) {
 				if (!this._stops[i].equals(gradient._stops[i]))
 					return false;

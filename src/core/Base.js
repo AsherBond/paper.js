@@ -36,7 +36,7 @@ Base.inject(/** @lends Base# */{
 	 */
 	toString: function() {
 		return this._id != null
-			?  (this.constructor.name || 'Object') + (this._name
+			?  (this._class || 'Object') + (this._name
 				? " '" + this._name + "'"
 				: ' @' + this._id)
 			: '{ ' + Base.each(this, function(value, key) {
@@ -67,13 +67,28 @@ Base.inject(/** @lends Base# */{
 	/**
 	 * #_set() is part of the mechanism for constructors which take one object
 	 * literal describing all the properties to be set on the created instance.
+	 *
+	 * @param {Object} props an object describing the properties to set
+	 * @param {Object} [exclude=undefined] a lookup table listing properties to
+	 * exclude.
 	 * @return {Boolean} {@true if the object is a plain object}
 	 */
-	_set: function(props) {
+	_set: function(props, exclude) {
 		if (props && Base.isPlainObject(props)) {
-			for (var key in props)
-				if (props.hasOwnProperty(key) && key in this)
-					this[key] = props[key];
+			// If props is a filtering object, we need to execute hasOwnProperty
+			// on the original object (it's parent / prototype). See _filtered
+			// inheritance trick in the argument reading code.
+			var orig = props._filtering || props;
+			for (var key in orig) {
+				if (key in this && orig.hasOwnProperty(key)
+						&& (!exclude || !exclude[key])) {
+					var value = props[key];
+					// Due to the _filtered inheritance trick, undefined is used
+					// to mask already consumed named arguments.
+					if (value !== undefined)
+						this[key] = value;
+				}
+			}
 			return true;
 		}
 	},
@@ -83,12 +98,12 @@ Base.inject(/** @lends Base# */{
 		// Keep track of all named classes for serialization and exporting.
 		exports: {},
 
-		extend: function extend(src) {
+		extend: function extend() {
 			// Override Base.extend() to register named classes in Base.exports,
 			// for deserialization and injection into PaperScope.
 			var res = extend.base.apply(this, arguments),
-				name = res.name;
-			if (name)
+				name = res.prototype._class;
+			if (name && !Base.exports[name])
 				Base.exports[name] = res;
 			return res;
 		},
@@ -101,7 +116,7 @@ Base.inject(/** @lends Base# */{
 		equals: function(obj1, obj2) {
 			function checkKeys(o1, o2) {
 				for (var i in o1)
-					if (o1.hasOwnProperty(i) && typeof o2[i] === 'undefined')
+					if (o1.hasOwnProperty(i) && !o2.hasOwnProperty(i))
 						return false;
 				return true;
 			}
@@ -148,16 +163,18 @@ Base.inject(/** @lends Base# */{
 		 *        or a normal array.
 		 * @param {Number} start the index at which to start reading in the list
 		 * @param {Number} length the amount of elements that can be read
-		 * @param {Boolean} clone controls wether passed objects should be
-		 *        cloned if they are already provided in the required type
+		 * @param {Object} options {@code options.readNull} controls whether null
+		 *        is returned or converted. {@code options.clone} controls
+		 *        whether passed objects should be cloned if they are already
+		 *        provided in the required type
 		 */
-		read: function(list, start, length, readNull, clone) {
+		read: function(list, start, length, options) {
 			// See if it's called directly on Base, and if so, read value and
 			// return without object conversion.
 			if (this === Base) {
 				var value = this.peek(list, start);
 				list._index++;
-				list._read = 1;
+				list.__read = 1;
 				return value;
 			}
 			var proto = this.prototype,
@@ -166,23 +183,29 @@ Base.inject(/** @lends Base# */{
 			if (!length)
 				length = list.length - index;
 			var obj = list[index];
-			if (obj instanceof this || readNull && obj == null && length <= 1) {
+			if (obj instanceof this
+				|| options && options.readNull && obj == null && length <= 1) {
 				if (readIndex)
 					list._index = index + 1;
-				return obj && clone ? obj.clone() : obj;
+				return obj && options && options.clone ? obj.clone() : obj;
 			}
-			obj = Base.create(this);
+			obj = Base.create(this.prototype);
 			if (readIndex)
-				obj._read = true;
+				obj.__read = true;
+			// If options were provided, pass them on to the constructed object
+			if (options)
+				obj.__options = options;
 			obj = obj.initialize.apply(obj, index > 0 || length < list.length
 				? Array.prototype.slice.call(list, index, index + length)
 				: list) || obj;
 			if (readIndex) {
-				list._index = index + obj._read;
-				// Have arguments._read point to the amount of args read in the
+				list._index = index + obj.__read;
+				// Have arguments.__read point to the amount of args read in the
 				// last read() call
-				list._read = obj._read;
-				delete obj._read;
+				list.__read = obj.__read;
+				delete obj.__read;
+				if (options)
+					delete obj.__options;
 			}
 			return obj;
 		},
@@ -204,16 +227,18 @@ Base.inject(/** @lends Base# */{
 		 * @param {Array} list the list to read from, either an arguments object
 		 *        or a normal array.
 		 * @param {Number} start the index at which to start reading in the list
-		 * @param {Boolean} clone controls wether passed objects should be
-		 *        cloned if they are already provided in the required type
+		 * @param {Object} options {@code options.readNull} controls whether null
+		 *        is returned or converted. {@code options.clone} controls
+		 *        whether passed objects should be cloned if they are already
+		 *        provided in the required type
 		 */
-		readAll: function(list, start, readNull, clone) {
+		readAll: function(list, start, options) {
 			var res = [], entry;
 			for (var i = start || 0, l = list.length; i < l; i++) {
 				res.push(Array.isArray(entry = list[i])
 						// lenghh = 0 for length = max
-						? this.read(entry, 0, 0, readNull, clone)
-						: this.read(list, i, 1, readNull, clone));
+						? this.read(entry, 0, 0, options)
+						: this.read(list, i, 1, options));
 			}
 			return res;
 		},
@@ -229,10 +254,24 @@ Base.inject(/** @lends Base# */{
 		 * @param {Number} start the index at which to start reading in the list
 		 * @param {String} name the property name to read from.
 		 */
-		readNamed: function(list, name, start, length, readNull, clone) {
-			var value = this.getNamed(list, name);
-			return this.read(value != null ? [value] : list, start, length,
-					readNull, clone);
+		readNamed: function(list, name, start, length, options) {
+			var value = this.getNamed(list, name),
+				hasObject = value !== undefined;
+			if (hasObject) {
+				// Create a _filtered object that inherits from argument 0, and
+				// override all fields that were already read with undefined.
+				var filtered = list._filtered;
+				if (!filtered) {
+					filtered = list._filtered = Base.create(list[0]);
+					// Point _filtering to the original so Base#_set() can
+					// execute hasOwnProperty on it.
+					filtered._filtering = list[0];
+				}
+				// delete wouldn't work since the masked parent's value would
+				// shine through.
+				filtered[name] = undefined;
+			}
+			return this.read(hasObject ? [value] : list, start, length, options);
 		},
 
 		/**
@@ -247,7 +286,7 @@ Base.inject(/** @lends Base# */{
 				list._hasObject = list.length === 1 && Base.isPlainObject(arg);
 			if (list._hasObject)
 				// Return the whole arguments object if no name is provided.
-				return name ? arg[name] : arg;
+				return name ? arg[name] : list._filtered || arg;
 		},
 
 		/**
@@ -300,7 +339,7 @@ Base.inject(/** @lends Base# */{
 						if (!ref) {
 							this.length++;
 							var res = create.call(item),
-								name = item.constructor.name;
+								name = item._class;
 							// Also automatically insert class for dictionary
 							// entries.
 							if (name && res[0] !== name)
@@ -317,7 +356,7 @@ Base.inject(/** @lends Base# */{
 				// If we don't serialize to compact form (meaning no type
 				// identifier), see if _serialize didn't already add the class,
 				// e.g. for classes that do not support compact form.
-				var name = obj.constructor.name;
+				var name = obj._class;
 				if (name && !compact && !res._compact && res[0] !== name)
 					res.unshift(name);
 			} else if (Array.isArray(obj)) {
@@ -326,7 +365,7 @@ Base.inject(/** @lends Base# */{
 					res[i] = Base.serialize(obj[i], options, compact,
 							dictionary);
 				// Mark array as compact, so obj._serialize handling above
-				// doesn't add the constructor name again.
+				// doesn't add the class name again.
 				if (compact)
 					res._compact = true;
 			} else if (Base.isPlainObject(obj)) {
@@ -351,46 +390,51 @@ Base.inject(/** @lends Base# */{
 		 * deserializable types through Base.exports, and the values following
 		 * in the array are the arguments to their initialize function.
 		 * Any other value is passed on unmodified.
-		 * The passed data is recoursively traversed and converted, leaves first
+		 * The passed json data is recoursively traversed and converted, leaves
+		 * first
 		 */
-		deserialize: function(obj, data) {
-			var res = obj;
-			// A data side-car to deserialize that can hold any kind of 'global'
-			// data across a deserialization. It's currently just used to hold
-			// dictionary definitions.
-			data = data || {};
-			if (Array.isArray(obj)) {
+		deserialize: function(json, target, _data) {
+			var res = json;
+			// A _data side-car to deserialize that can hold any kind of
+			// 'global' data across a deserialization. It's currently only used
+			// to hold dictionary definitions.
+			_data = _data || {};
+			if (Array.isArray(json)) {
 				// See if it's a serialized type. If so, the rest of the array
 				// are the arguments to #initialize(). Either way, we simply
 				// deserialize all elements of the array.
-				var type = obj[0],
+				var type = json[0],
 					// Handle stored dictionary specially, since we need to
 					// keep is a lookup table to retrieve referenced items from.
 					isDictionary = type === 'dictionary';
 				if (!isDictionary) {
 					// First see if this is perhaps a dictionary reference, and
 					// if so return its definition instead.
-					if (data.dictionary && obj.length == 1 && /^#/.test(type))
-						return data.dictionary[type];
+					if (_data.dictionary && json.length == 1 && /^#/.test(type))
+						return _data.dictionary[type];
 					type = Base.exports[type];
 				}
 				res = [];
 				// Skip first type entry for arguments
-				for (var i = type ? 1 : 0, l = obj.length; i < l; i++)
-					res.push(Base.deserialize(obj[i], data));
+				for (var i = type ? 1 : 0, l = json.length; i < l; i++)
+					res.push(Base.deserialize(json[i], null, _data));
 				if (isDictionary) {
-					data.dictionary = res[0];
+					_data.dictionary = res[0];
 				} else if (type) {
 					// Create serialized type and pass collected arguments to
-					// #initialize().
+					// constructor().
 					var args = res;
-					res = Base.create(type);
-					res.initialize.apply(res, args);
+					// If a target is provided and its of the right type,
+					// import right into it.
+					res = target instanceof type
+							? target
+							: Base.create(type.prototype);
+					type.apply(res, args);
 				}
-			} else if (Base.isPlainObject(obj)) {
+			} else if (Base.isPlainObject(json)) {
 				res = {};
-				for (var key in obj)
-					res[key] = Base.deserialize(obj[key], data);
+				for (var key in json)
+					res[key] = Base.deserialize(json[key], null, _data);
 			}
 			return res;
 		},
@@ -399,9 +443,9 @@ Base.inject(/** @lends Base# */{
 			return JSON.stringify(Base.serialize(obj, options));
 		},
 
-		importJSON: function(json) {
+		importJSON: function(json, target) {
 			return Base.deserialize(
-					typeof json === 'string' ? JSON.parse(json) : json);
+					typeof json === 'string' ? JSON.parse(json) : json, target);
 		},
 
 		/**

@@ -59,6 +59,7 @@ PathItem.inject(new function() {
 			if (others)
 				others.push(other);
 			segment._intersection = other;
+			loc._segment = segment;
 		}
 		return others;
 	}
@@ -101,8 +102,8 @@ PathItem.inject(new function() {
 		// We do not modify the operands themselves
 		// The result might not belong to the same type
 		// i.e. subtraction(A:Path, B:Path):CompoundPath etc.
-		path1 = reorientPath(path1.clone());
-		path2 = reorientPath(path2.clone());
+		path1 = reorientPath(path1.clone(false));
+		path2 = reorientPath(path2.clone(false));
 		var path1Clockwise = path1.isClockwise(),
 			path2Clockwise = path2.isClockwise(),
 			// Calculate all the intersections
@@ -112,10 +113,14 @@ PathItem.inject(new function() {
 		// result of that on to the second call.
 		splitPath(splitPath(intersections, true));
 		// Do operator specific calculations before we begin
-		if (subtract) {
+		//  Make both paths at clockwise orientation, except when @subtract = true
+		//  We need both paths at opposit orientation for subtraction
+		if (!path1Clockwise)
+			path1.reverse();
+		if (!(subtract ^ path2Clockwise))
 			path2.reverse();
-			path2Clockwise = !path2Clockwise;
-		}
+		path1Clockwise = true;
+		path2Clockwise = !subtract;
 		var paths = []
 				.concat(path1._children || [path1])
 				.concat(path2._children || [path2]),

@@ -10,12 +10,44 @@
  * All rights reserved.
  */
 
-// First add Base, PaperScript and Numerical to exports, then inject all exports
-// into PaperScope, and create the initial paper object, all in one statement:
+// First add Base and a couple of other objects that are not automatically
+// exported to exports (Numerical, Key, etc), then inject all exports into
+// PaperScope, and create the initial paper object, all in one statement:
+/*#*/ if (options.environment == 'browser') {
+
 paper = new (PaperScope.inject(Base.merge(Base.exports, {
 	// Mark fields as enumeralbe so PaperScope.inject can pick them up
 	enumerable: true,
 	Base: Base,
-	PaperScript: PaperScript,
-	Numerical: Numerical
+	Numerical: Numerical,
+	DomElement: DomElement,
+	DomEvent: DomEvent,
+	Http: Http,
+	Key: Key
 })))();
+
+// Support AMD (e.g. require.js)
+// Use named module AMD syntax since there are other unnamed calls to define()
+// inside the built library (from inlined Acorn / Esprima) that apparently
+// confuse the require.js optimizer.
+if (typeof define === 'function' && define.amd)
+	define('paper', paper);
+
+/*#*/ } else if (options.environment == 'node') {
+
+paper = new (PaperScope.inject(Base.merge(Base.exports, {
+	// Mark fields as enumeralbe so PaperScope.inject can pick them up
+	enumerable: true,
+	Base: Base,
+	Numerical: Numerical,
+	DomElement: DomElement,
+	// Export dom/node.js stuff too
+	XMLSerializer: XMLSerializer,
+	DOMParser: DOMParser,
+	Canvas: Canvas
+})))();
+
+// Export the paper scope.
+module.exports = paper;
+
+/*#*/ } // options.environment == 'node'

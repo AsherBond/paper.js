@@ -10,15 +10,19 @@
  * All rights reserved.
  */
 
-// Define default options for compile-time preprocessing. These are also used
-// for building, but some values are overridden (e.g. version, stats). 
+// Define default options for browser based compile-time preprocessing.
+// These are also used for building, but some values are overridden
+// (e.g. version, stats). 
 
 var options = {
 	parser: 'acorn',
 	version: 'dev',
-	browser: true,
+	environment: 'browser',
 	stats: true,
 	svg: true,
 	fatline: true,
+	paperscript: true,
+	palette: true,
+	nativeContains: false,
 	debug: false
 };

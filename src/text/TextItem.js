@@ -22,6 +22,7 @@
  * @extends Item
  */
 var TextItem = Item.extend(/** @lends TextItem# */{
+	_class: 'TextItem',
 	_boundsSelected: true,
 	_serializeFields: {
 		content: null
@@ -31,25 +32,32 @@ var TextItem = Item.extend(/** @lends TextItem# */{
 	_boundsGetter: 'getBounds',
 
 	initialize: function TextItem(arg) {
+		this._content = '';
+		this._lines = [];
 		// Support two forms of item initialization: Passing one object literal
 		// describing all the different properties to be set, or a point where
 		// it should be placed (arg).
-		// See if a point is passed, and if so, pass it on to base(). If not, it
-		// might be a properties object literal for #setPropeties() at the end.
-		var hasProperties = arg && Base.isPlainObject(arg)
+		// See if a point is passed, and if so, pass it on to _initialize().
+		// If not, it might be a properties object literal.
+		var hasProps = arg && Base.isPlainObject(arg)
 				&& arg.x === undefined && arg.y === undefined;
-		Item.call(this, hasProperties ? null : Point.read(arguments));
-		this._content = '';
-		this._lines = [];
-		if (hasProperties)
-			this._set(arg);
+		this._initialize(hasProps && arg, !hasProps && Point.read(arguments));
+	},
+
+	_equals: function(item) {
+		return this._content === item._content;
+	},
+
+	_clone: function _clone(copy) {
+		copy.setContent(this._content);
+		return _clone.base.call(this, copy);
 	},
 
 	/**
 	 * The text contents of the text item.
 	 *
-	 * @name TextItem#content
 	 * @type String
+	 * @bean
 	 *
 	 * @example {@paperscript}
 	 * // Setting the content of a PointText item:
@@ -76,12 +84,6 @@ var TextItem = Item.extend(/** @lends TextItem# */{
 	 * 	text.content = 'Your position is: ' + event.point.toString();
 	 * }
 	 */
-
-	_clone: function _clone(copy) {
-		copy.setContent(this._content);
-		return _clone.base.call(this, copy);
-	},
-
 	getContent: function() {
 		return this._content;
 	},

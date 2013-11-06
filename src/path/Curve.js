@@ -25,6 +25,7 @@
  * tangents at given offsets.
  */
 var Curve = Base.extend(/** @lends Curve# */{
+	_class: 'Curve',
 	/**
 	 * Creates a new curve object.
 	 *
@@ -57,24 +58,32 @@ var Curve = Base.extend(/** @lends Curve# */{
 	 */
 	initialize: function Curve(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
 		var count = arguments.length;
-		if (count === 0) {
+		if (count === 3) {
+			// Undocumented internal constructor, used by Path#getCurves()
+			// new Segment(path, segment1, segment2);
+			this._path = arg0;
+			this._segment1 = arg1;
+			this._segment2 = arg2;
+		} else if (count === 0) {
 			this._segment1 = new Segment();
 			this._segment2 = new Segment();
-		} else if (count == 1) {
+		} else if (count === 1) {
+			// new Segment(segment);
 			// Note: This copies from existing segments through bean getters
 			this._segment1 = new Segment(arg0.segment1);
 			this._segment2 = new Segment(arg0.segment2);
-		} else if (count == 2) {
+		} else if (count === 2) {
+			// new Segment(segment1, segment2);
 			this._segment1 = new Segment(arg0);
 			this._segment2 = new Segment(arg1);
 		} else {
 			var point1, handle1, handle2, point2;
-			if (count == 4) {
+			if (count === 4) {
 				point1 = arg0;
 				handle1 = arg1;
 				handle2 = arg2;
 				point2 = arg3;
-			} else if (count == 8) {
+			} else if (count === 8) {
 				// Convert getValue() array back to points and handles so we
 				// can create segments for those.
 				point1 = [arg0, arg1];
@@ -304,20 +313,39 @@ var Curve = Base.extend(/** @lends Curve# */{
 	},
 
 	/**
-	 * Divides the curve into two at the specified position. The curve itself is
-	 * modified and becomes the first part, the second part is returned as a new
-	 * curve. If the modified curve belongs to a path item, the second part is
-	 * added to it.
+	 * Private method that handles all types of offset / isParameter pairs and
+	 * converts it to a curve parameter.
+	 */
+	_getParameter: function(offset, isParameter) {
+		return isParameter
+				? offset
+				// Accept CurveLocation objects, and objects that act like
+				// them:
+				: offset && offset.curve === this
+					? offset.parameter
+					: offset === undefined && isParameter === undefined
+						? 0.5 // default is in the middle
+						: this.getParameterAt(offset, 0);
+	},
+
+	/**
+	 * Divides the curve into two curves at the given offset. The curve itself
+	 * is modified and becomes the first part, the second part is returned as a
+	 * new curve. If the modified curve belongs to a path item, the second part
+	 * is also added to the path.
 	 *
-	 * @param parameter the position at which to split the curve as a value
-	 *        between 0 and 1 {@default 0.5}
+	 * @name Curve#divide
+	 * @function
+	 * @param {Number} [offset=0.5] the offset on the curve at which to split,
+	 *        or the curve time parameter if {@code isParameter} is {@code true}
+	 * @param {Boolean} [isParameter=false] pass {@code true} if {@code offset}
+	 *        is a curve time parameter.
 	 * @return {Curve} the second part of the divided curve
 	 */
-	divide: function(parameter) {
-		var res = null;
-		// Accept CurveLocation objects, and objects that act like them:
-		if (parameter && parameter.curve === this)
-			parameter = parameter.parameter;
+	// TODO: Rename to divideAt()?
+	divide: function(offset, isParameter) {
+		var parameter = this._getParameter(offset, isParameter),
+			res = null;
 		if (parameter > 0 && parameter < 1) {
 			var parts = Curve.subdivide(this.getValues(), parameter),
 				isLinear = this.isLinear(),
@@ -367,14 +395,24 @@ var Curve = Base.extend(/** @lends Curve# */{
 	},
 
 	/**
-	 * Splits the path that this curve belongs to at the given parameter, using
-	 * {@link Path#split(index, parameter)}.
+	 * Splits the path this curve belongs to at the given offset. After
+	 * splitting, the path will be open. If the path was open already, splitting
+	 * will result in two paths.
 	 *
-	 * @return {Path} the second part of the split path
+	 * @name Curve#split
+	 * @function
+	 * @param {Number} [offset=0.5] the offset on the curve at which to split,
+	 *        or the curve time parameter if {@code isParameter} is {@code true}
+	 * @param {Boolean} [isParameter=false] pass {@code true} if {@code offset}
+	 *        is a curve time parameter.
+	 * @return {Path} the newly created path after splitting, if any
+	 * @see Path#split(index, parameter)
 	 */
-	split: function(parameter) {
+	// TODO: Rename to splitAt()?
+	split: function(offset, isParameter) {
 		return this._path
-			? this._path.split(this._segment1._index, parameter)
+			? this._path.split(this._segment1._index,
+					this._getParameter(offset, isParameter))
 			: null;
 	},
 
@@ -388,7 +426,7 @@ var Curve = Base.extend(/** @lends Curve# */{
 	},
 
 	/**
-	 * @return {String} A string representation of the curve.
+	 * @return {String} a string representation of the curve
 	 */
 	toString: function() {
 		var parts = [ 'point1: ' + this._segment1._point ];
@@ -402,14 +440,6 @@ var Curve = Base.extend(/** @lends Curve# */{
 
 // Mess with indentation in order to get more line-space below...
 statics: {
-	create: function(path, segment1, segment2) {
-		var curve = Base.create(Curve);
-		curve._path = path;
-		curve._segment1 = segment1;
-		curve._segment2 = segment2;
-		return curve;
-	},
-
 	getValues: function(segment1, segment2) {
 		var p1 = segment1._point,
 			h1 = segment1._handleOut,
@@ -423,9 +453,8 @@ statics: {
 		];
 	},
 
-	evaluate: function(v, offset, isParameter, type) {
-		var t = isParameter ? offset : Curve.getParameterAt(v, offset, 0),
-			p1x = v[0], p1y = v[1],
+	evaluate: function(v, t, type) {
+		var p1x = v[0], p1y = v[1],
 			c1x = v[2], c1y = v[3],
 			c2x = v[4], c2y = v[5],
 			p2x = v[6], p2y = v[7],
@@ -506,7 +535,7 @@ statics: {
 
 	// Converts from the point coordinates (p1, c1, c2, p2) for one axis to
 	// the polynomial coefficients and solves the polynomial for val
-	solveCubic: function (v, coord, val, roots) {
+	solveCubic: function (v, coord, val, roots, min, max) {
 		var p1 = v[coord],
 			c1 = v[coord + 2],
 			c2 = v[coord + 4],
@@ -514,7 +543,7 @@ statics: {
 			c = 3 * (c1 - p1),
 			b = 3 * (c2 - c1) - c,
 			a = p2 - p1 - c - b;
-		return Numerical.solveCubic(a, b, c, p1 - val, roots);
+		return Numerical.solveCubic(a, b, c, p1 - val, roots, min, max);
 	},
 
 	getParameterOf: function(v, x, y) {
@@ -569,7 +598,9 @@ statics: {
 	},
 
 	isLinear: function(v) {
-		return v[0] === v[2] && v[1] === v[3] && v[4] === v[6] && v[5] === v[7];
+		var isZero = Numerical.isZero;
+		return isZero(v[0] - v[2]) && isZero(v[1] - v[3])
+				&& isZero(v[4] - v[6]) && isZero(v[5] - v[7]);
 	},
 
 	isFlatEnough: function(v, tolerance) {
@@ -609,70 +640,6 @@ statics: {
 			Curve._addBounds(v[i], v[i + 2], v[i + 4], v[i + 6],
 					i, 0, min, max, roots);
 		return new Rectangle(min[0], min[1], max[0] - min[0], max[1] - min[1]);
-	},
-
-	_getCrossings: function(v, prev, x, y, roots) {
-		// Implementation of the crossing number algorithm:
-		// http://en.wikipedia.org/wiki/Point_in_polygon
-		// Solve the y-axis cubic polynomial for y and count all solutions
-		// to the right of x as crossings.
-		var count = Curve.solveCubic(v, 1, y, roots),
-			crossings = 0,
-			tolerance = /*#=*/ Numerical.TOLERANCE,
-			abs = Math.abs;
-
-		// Checks the y-slope between the current curve and the previous for a
-		// change of orientation, when a solution is found at t == 0
-		function changesOrientation(tangent) {
-			return Curve.evaluate(prev, 1, true, 1).y
-					* tangent.y > 0;
-		}
-
-		if (count === -1) {
-			// Infinite solutions, so we have a horizontal curve.
-			// Find parameter through getParameterOf()
-			roots[0] = Curve.getParameterOf(v, x, y);
-			count = roots[0] !== null ? 1 : 0;
-		}
-		for (var i = 0; i < count; i++) {
-			var t = roots[i];
-			if (t > -tolerance && t < 1 - tolerance) {
-				var pt = Curve.evaluate(v, t, true, 0);
-				if (x < pt.x + tolerance) {
-					// Pass 1 for Curve.evaluate() type to calculate tangent
-					var tan = Curve.evaluate(v, t, true, 1);
-					// Handle all kind of edge cases when points are on
-					// contours or rays are touching countours, to termine
-					// wether the crossing counts or not.
-					// See if the actual point is on the countour:
-					if (abs(pt.x - x) < tolerance) {
-						// Do not count the crossing if it is on the left hand
-						// side of the shape (tangent pointing upwards), since
-						// the ray will go out the other end, count as crossing
-						// there, and the point is on the contour, so to be
-						// considered inside.
-						var angle = tan.getAngle();
-						if (angle > -180 && angle < 0
-							// Handle special case where point is on a corner,
-							// in which case this crossing is skipped if both
-							// tangents have the same orientation.
-							&& (t > tolerance || changesOrientation(tan)))
-								continue;
-					} else  {
-						// Skip touching stationary points:
-						if (abs(tan.y) < tolerance
-							// Check derivate for stationary points. If root is
-							// close to 0 and not changing vertical orientation
-							// from the previous curve, do not count this root,
-							// as it's touching a corner.
-							|| t < tolerance && !changesOrientation(tan))
-								continue;
-					}
-					crossings++;
-				}
-			}
-		}
-		return crossings;
 	},
 
 	/**
@@ -719,6 +686,132 @@ statics: {
 					+ t * t * t * v3,
 					padding);
 		}
+	},
+
+	_getWinding: function(v, x, y, roots1, roots2) {
+		// Implementation of the crossing number algorithm:
+		// http://en.wikipedia.org/wiki/Point_in_polygon
+		// Solve the y-axis cubic polynomial for y and count all solutions
+		// to the right of x as crossings.
+		var tolerance = /*#=*/ Numerical.TOLERANCE,
+			abs = Math.abs;
+
+		// Looks at the curve's start and end y coordinates to determine
+		// orientation. This only makes sense for curves with clear orientation,
+		// which is why we need to split them at y extrema, see below.
+		// Returns 0 if the curve is outside the boundaries and is not to be
+		// considered.
+		function getOrientation(v) {
+			var y0 = v[1],
+				y1 = v[7],
+				dir = 1;
+			if (y0 > y1) {
+				var tmp = y0;
+				y0 = y1;
+				y1 = tmp;
+			    dir = -1;
+			}
+			if (y < y0 || y > y1)
+			    dir = 0;
+			return dir;
+		}
+
+		if (Curve.isLinear(v)) {
+			// Special simplified case for handling lines.
+			var dir = getOrientation(v);
+			if (!dir)
+				return 0;
+			var cross = (v[6] - v[0]) * (y - v[1]) - (v[7] - v[1]) * (x - v[0]);
+			return (cross < -tolerance ? -1 : 1) == dir ? 0 : dir;
+		}
+
+		// Handle bezier curves. We need to chop them into smaller curves with
+		// defined orientation, by solving the derrivative curve for Y extrema.
+		var y0 = v[1],
+			y1 = v[3],
+			y2 = v[5],
+			y3 = v[7];
+		// Split the curve at y extrema, to get bezier curves with clear
+		// orientation: Calculate the derivative and find its roots.
+		var a = 3 * (y1 - y2) - y0 + y3,
+			b = 2 * (y0 + y2) - 4 * y1,
+			c = y1 - y0;
+		// Keep then range to 0 .. 1 (excluding) in the search for y extrema
+		var count = Numerical.solveQuadratic(a, b, c, roots1, tolerance,
+				1 - tolerance),
+			part, // The part of the curve that's chopped off.
+			rest = v, // The part that's left to be chopped.
+			t1 = roots1[0], // The first root
+			winding = 0;
+		for (var i = 0; i <= count; i++) {
+			if (i === count) {
+				part = rest;
+			} else {
+				// Divide the curve at t1.
+				var curves = Curve.subdivide(rest, t1);
+				part = curves[0];
+				rest = curves[1];
+				t1 = roots1[i];
+				// TODO: Watch for divide by 0
+				// Now renormalize t1 to the range of the next iteration.
+				t1 = (roots1[i + 1] - t1) / (1 - t1);
+			}
+			// Make sure that the connecting y extrema are flat
+			if (i > 0)
+				part[3] = part[1]; // curve2.handle1.y = curve2.point1.y;
+			if (i < count)
+				part[5] = rest[1]; // curve1.handle2.y = curve2.point1.y;
+			var dir = getOrientation(part);
+			if (!dir)
+			    continue;
+			// Adjust start and end range depending on if curve was flipped.
+			// In normal orientation we exclude the end point since it's also
+			// the start point of the next curve. If flipped, we have to exclude
+			// the end point instead.
+			var t2,
+				px;
+			// Since we've split at y extrema, there can only be 0, 1, or
+			// infinite solutions now.
+			if (Curve.solveCubic(part, 1, y, roots2, -tolerance, 1 + -tolerance)
+					=== 1) {
+				t2 = roots2[0];
+				px = Curve.evaluate(part, t2, 0).x;
+			} else {
+				var mid = (part[1] + part[7]) / 2;
+				// Pick t2 based on the direction of the curve. If y < mid,
+				// choose the beginning (which is the end of a curve with
+				// negative orientation, as we're not actually flipping curves).
+				t2 = y < mid && dir > 0 ? 0 : 1;
+				// Filter out the end point, as it'll be the start point of the
+				// next curve.
+				if (t2 === 1 && y == part[7])
+					continue;
+				px = t2 === 0 ? part[0] : part[6];
+			}
+			// See if we're touching a horizontal stationary point by looking at
+			// the tanget's y coordinate.
+			var flat = abs(Curve.evaluate(part, t2, 1).y) < tolerance;
+			// Calculate compare tolerance based on curve orientation (dir), to
+			// add a bit of tolerance when considering points lying on the curve
+			// as inside. But if we're touching a horizontal stationary point,
+			// set compare tolerance to -tolerance, since we don't want to step
+			// side-ways in tolerance based on orientation. This is needed e.g.
+			// when touching the bottom tip of a circle.
+			// Pass 1 for Curve.evaluate() type to calculate tangent
+			if (x >= px + (flat ? -tolerance : tolerance * dir)
+					// When touching a stationary point, only count it if we're
+					// actuall on it.
+					&& !(flat && (abs(t2) < tolerance && x != part[0]
+						|| abs(t2 - 1) < tolerance && x != part[6]))) {
+				// If this is a horizontal stationary point, and we're at the
+				// end of the curve (or at the beginning of a curve with
+				// negative direction, as we're not actually flipping them),
+				// flip dir, as the curve is about to change orientation.
+				winding += flat && abs(t2 - (dir > 0 ? 1 : 0)) < tolerance
+						? -dir : dir;
+			}
+		}
+		return winding;
 	}
 }}, Base.each(['getBounds', 'getStrokeBounds', 'getHandleBounds', 'getRoughBounds'],
 	// Note: Although Curve.getBounds() exists, we are using Path.getBounds() to
@@ -774,7 +867,7 @@ statics: {
 	 * @bean
 	 * @ignore
 	 */
-}), Base.each(['getPoint', 'getTangent', 'getNormal', 'getCurvatureAt'],
+}), Base.each(['getPoint', 'getTangent', 'getNormal', 'getCurvature'],
 	// Note: Although Curve.getBounds() exists, we are using Path.getBounds() to
 	// determine the bounds of Curve objects with defined segment1 and segment2
 	// values Curve.getBounds() can be used directly on curve arrays, without
@@ -782,12 +875,14 @@ statics: {
 	// finds path interesections.
 	function(name, index) {
 		this[name + 'At'] = function(offset, isParameter) {
-			return Curve.evaluate(this.getValues(), offset, isParameter, index);
+			var values = this.getValues();
+			return Curve.evaluate(values, isParameter
+					? offset : Curve.getParameterAt(values, offset, 0), index);
 		};
 		// Deprecated and undocumented, but keep around for now.
 		// TODO: Remove once enough time has passed (28.01.2013)
 		this[name] = function(parameter) {
-			return Curve.evaluate(this.getValues(), parameter, true, index);
+			return Curve.evaluate(this.getValues(), parameter, index);
 		};
 	},
 /** @lends Curve# */{
@@ -839,7 +934,10 @@ statics: {
 	 * @return {CurveLocation} the curve location of the specified point.
 	 */
 	getLocationOf: function(point) {
-		var t = this.getParameterOf.apply(this, arguments);
+		// We need to use point to avoid minification issues and prevent method
+		// from turning into a bean (by removal of the point argument).
+		point = Point.read(arguments);
+		var t = this.getParameterOf(point);
 		return t != null ? new CurveLocation(this, t) : null;
 	},
 
@@ -849,13 +947,12 @@ statics: {
 			count = 100,
 			tolerance = Numerical.TOLERANCE,
 			minDist = Infinity,
-			minT = 0,
-			max = 1 + tolerance; // Accomodate imprecision in comparisson
+			minT = 0;
 
 		function refine(t) {
 			if (t >= 0 && t <= 1) {
 				var dist = point.getDistance(
-						Curve.evaluate(values, t, true, 0), true);
+						Curve.evaluate(values, t, 0), true);
 				if (dist < minDist) {
 					minDist = dist;
 					minT = t;
@@ -873,13 +970,16 @@ statics: {
 			if (!refine(minT - step) && !refine(minT + step))
 				step /= 2;
 		}
-		var pt = Curve.evaluate(values, minT, true, 0);
+		var pt = Curve.evaluate(values, minT, 0);
 		return new CurveLocation(this, minT, pt, null, null, null,
 				point.getDistance(pt));
 	},
 
 	getNearestPoint: function(point) {
-		return this.getNearestLocation.apply(this, arguments).getPoint();
+		// We need to use point to avoid minification issues and prevent method
+		// from turning into a bean (by removal of the point argument).
+		point = Point.read(arguments);
+		return this.getNearestLocation(point).getPoint();
 	}
 
 	/**
@@ -973,8 +1073,10 @@ new function() { // Scope for methods that require numerical integration
 				a = 0;
 			if (b === undefined)
 				b = 1;
+			var isZero = Numerical.isZero;
 			// See if the curve is linear by checking p1 == c1 and p2 == c2
-			if (v[0] == v[2] && v[1] == v[3] && v[6] == v[4] && v[7] == v[5]) {
+			if (isZero(v[0] - v[2]) && isZero(v[1] - v[3])
+					&& isZero(v[6] - v[4]) && isZero(v[7] - v[5])) {
 				// Straight line
 				var dx = v[6] - v[0], // p2x - p1x
 					dy = v[7] - v[1]; // p2y - p1y
@@ -1118,8 +1220,8 @@ new function() { // Scope for methods that require numerical integration
 				var t1 = (range1[0] + range1[1]) / 2,
 					t2 = (range2[0] + range2[1]) / 2;
 				addLocation(locations,
-						curve1, t1, Curve.evaluate(v1, t1, true, 0),
-						curve2, t2, Curve.evaluate(v2, t2, true, 0));
+						curve1, t1, Curve.evaluate(v1, t1, 0),
+						curve2, t2, Curve.evaluate(v2, t2, 0));
 				break;
 			}
 		}
@@ -1327,43 +1429,45 @@ new function() { // Scope for methods that require numerical integration
 		var flip = Curve.isLinear(v1),
 			vc = flip ? v2 : v1,
 			vl = flip ? v1 : v2,
-			l1x = vl[0], l1y = vl[1],
-			l2x = vl[6], l2y = vl[7],
-			// Rotate both curve and line around l1 so that line is on x axis
-			lvx = l2x - l1x,
-			lvy = l2y - l1y,
-			// Angle with x axis (1, 0)
-			angle = Math.atan2(-lvy, lvx),
+			lx1 = vl[0], ly1 = vl[1],
+			lx2 = vl[6], ly2 = vl[7],
+			// Rotate both curve and line around l1 so that line is on x axis.
+			ldx = lx2 - lx1,
+			ldy = ly2 - ly1,
+			// Calculate angle to the x-axis (1, 0).
+			angle = Math.atan2(-ldy, ldx),
 			sin = Math.sin(angle),
 			cos = Math.cos(angle),
-			// (rl1x, rl1y) = (0, 0)
-			rl2x = lvx * cos - lvy * sin,
-			rl2y = lvy * cos + lvx * sin,
-			vcr = [];
-
+			// (rlx1, rly1) = (0, 0)
+			rlx2 = ldx * cos - ldy * sin,
+			// The curve values for the rotated line.
+			rvl = [0, 0, 0, 0, rlx2, 0, rlx2, 0],
+			// Calculate the curve values of the rotated curve.
+			rvc = [];
 		for(var i = 0; i < 8; i += 2) {
-			var x = vc[i] - l1x,
-				y = vc[i + 1] - l1y;
-			vcr.push(
+			var x = vc[i] - lx1,
+				y = vc[i + 1] - ly1;
+			rvc.push(
 				x * cos - y * sin,
 				y * cos + x * sin);
 		}
 		var roots = [],
-			count = Curve.solveCubic(vcr, 1, 0, roots);
+			count = Curve.solveCubic(rvc, 1, 0, roots, 0, 1);
 		// NOTE: count could be -1 for inifnite solutions, but that should only
 		// happen with lines, in which case we should not be here.
 		for (var i = 0; i < count; i++) {
-			var t = roots[i];
-			if (t >= 0 && t <= 1) {
-				var point = Curve.evaluate(vcr, t, true, 0);
-				// We do have a point on the infinite line. Check if it falls on
-				// the line *segment*.
-				if (point.x  >= 0 && point.x <= rl2x)
-					addLocation(locations,
-							flip ? curve2 : curve1,
-							// The actual intersection point
-							t, Curve.evaluate(vc, t, true, 0),
-							flip ? curve1 : curve2);
+			var tc = roots[i],
+				x = Curve.evaluate(rvc, tc, 0).x;
+			// We do have a point on the infinite line. Check if it falls on
+			// the line *segment*.
+			if (x >= 0 && x <= rlx2) {
+				// Find the parameter of the intersection on the rotated line. 
+				var tl = Curve.getParameterOf(rvl, x, 0),
+					t1 = flip ? tl : tc,
+					t2 = flip ? tc : tl;
+				addLocation(locations,
+						curve1, t1, Curve.evaluate(v1, t1, 0),
+						curve2, t2, Curve.evaluate(v2, t2, 0));
 			}
 		}
 	}

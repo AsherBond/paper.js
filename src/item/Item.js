@@ -83,9 +83,10 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			}
 		}
 		this._style = new Style(this._project._currentStyle, this);
-		this._matrix = new Matrix();
+		var matrix = this._matrix = new Matrix();
 		if (point)
-			this._matrix.translate(point);
+			matrix.translate(point);
+		matrix._owner = this;
 		return props ? this._set(props, { insert: true }) : true;
 	},
 
@@ -765,75 +766,6 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		// translate the item. Pass true for dontLink, as we do not need a
 		// LinkedPoint to simply calculate this distance.
 		this.translate(Point.read(arguments).subtract(this.getPosition(true)));
-	},
-
-	/**
-	 * The item's transformation matrix, defining position and dimensions in
-	 * relation to its parent item in which it is contained.
-	 *
-	 * @type Matrix
-	 * @bean
-	 */
-	getMatrix: function() {
-		return this._matrix;
-	},
-
-	setMatrix: function(matrix) {
-		// Use Matrix#initialize to easily copy over values.
-		this._matrix.initialize(matrix);
-		if (this._transformContent)
-			this.applyMatrix(true);
-		this._changed(/*#=*/ Change.GEOMETRY);
-	},
-
-	/**
-	 * The item's global transformation matrix in relation to the global project
-	 * coordinate space.
-	 *
-	 * @type Matrix
-	 * @bean
-	 */
-	getGlobalMatrix: function() {
-		// TODO: if drawCount is out of sync, we still need to walk up the chain
-		// and concatenate the matrices.
-		return this._drawCount === this._project._drawCount
-				&& this._globalMatrix || null;
-	},
-
-	/**
-	 * Converts the specified point from global project coordinates to local
-	 * coordinates in relation to the the item's own coordinate space.
-	 *
-	 * @param {Point} point the point to be transformed
-	 * @return {Point} the transformed point as a new instance
-	 */
-	globalToLocal: function(/* point */) {
-		var matrix = this.getGlobalMatrix();
-		return matrix && matrix._transformPoint(Point.read(arguments));
-	},
-
-	/**
-	 * Converts the specified point from local coordinates to global coordinates
-	 * in relation to the the project coordinate space.
-	 *
-	 * @param {Point} point the point to be transformed
-	 * @return {Point} the transformed point as a new instance
-	 */
-	localToGlobal: function(/* point */) {
-		var matrix = this.getGlobalMatrix();
-		return matrix && matrix._inverseTransform(Point.read(arguments));
-	},
-
-	/**
-	 * Specifies whether the item has any content or not. The meaning of what
-	 * content is differs from type to type. For example, a {@link Group} with
-	 * no children, a {@link TextItem} with no text content and a {@link Path}
-	 * with no segments all are considered empty.
-	 *
-	 * @return Boolean
-	 */
-	isEmpty: function() {
-		return !this._children || this._children.length == 0;
 	}
 }, Base.each(['getBounds', 'getStrokeBounds', 'getHandleBounds', 'getRoughBounds'],
 	function(name) {
@@ -1024,6 +956,57 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 * @ignore
 	 */
 }), /** @lends Item# */{
+	/**
+	 * The item's transformation matrix, defining position and dimensions in
+	 * relation to its parent item in which it is contained.
+	 *
+	 * @type Matrix
+	 * @bean
+	 */
+	getMatrix: function() {
+		return this._matrix;
+	},
+
+	setMatrix: function(matrix) {
+		// Use Matrix#initialize to easily copy over values.
+		this._matrix.initialize(matrix);
+		if (this._transformContent)
+			this.applyMatrix(true);
+		this._changed(/*#=*/ Change.GEOMETRY);
+	},
+
+	/**
+	 * The item's global transformation matrix in relation to the global project
+	 * coordinate space.
+	 *
+	 * @type Matrix
+	 * @bean
+	 */
+	getGlobalMatrix: function() {
+		// TODO: if drawCount is out of sync, we still need to walk up the chain
+		// and concatenate the matrices.
+		return this._drawCount === this._project._drawCount
+				&& this._globalMatrix || null;
+	},
+
+	/**
+	 * Specifies whether the group applies transformations directly to its
+	 * children, or whether they are to be stored in its {@link Item#matrix}
+	 *
+	 * @type Boolean
+	 * @default true
+	 * @bean
+	 */
+	getTransformContent: function() {
+		return this._transformContent;
+	},
+
+	setTransformContent: function(transform) {
+		this._transformContent = transform;
+		if (transform)
+			this.applyMatrix();
+	},
+
 	/**
 	 * {@grouptitle Project Hierarchy}
 	 * The project that this item belongs to.
@@ -2003,6 +1986,18 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	// locking an item currently has no effect
 	/**
 	 * {@grouptitle Tests}
+	 * Specifies whether the item has any content or not. The meaning of what
+	 * content is differs from type to type. For example, a {@link Group} with
+	 * no children, a {@link TextItem} with no text content and a {@link Path}
+	 * with no segments all are considered empty.
+	 *
+	 * @return Boolean
+	 */
+	isEmpty: function() {
+		return !this._children || this._children.length == 0;
+	},
+
+	/**
 	 * Checks whether the item is editable.
 	 *
 	 * @return {Boolean} {@true when neither the item, nor its parents are
@@ -2598,6 +2593,30 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		}
 		if (!_dontNotify)
 			this._changed(/*#=*/ Change.GEOMETRY);
+	},
+
+	/**
+	 * Converts the specified point from global project coordinates to local
+	 * coordinates in relation to the the item's own coordinate space.
+	 *
+	 * @param {Point} point the point to be transformed
+	 * @return {Point} the transformed point as a new instance
+	 */
+	globalToLocal: function(/* point */) {
+		var matrix = this.getGlobalMatrix();
+		return matrix && matrix._transformPoint(Point.read(arguments));
+	},
+
+	/**
+	 * Converts the specified point from local coordinates to global coordinates
+	 * in relation to the the project coordinate space.
+	 *
+	 * @param {Point} point the point to be transformed
+	 * @return {Point} the transformed point as a new instance
+	 */
+	localToGlobal: function(/* point */) {
+		var matrix = this.getGlobalMatrix();
+		return matrix && matrix._inverseTransform(Point.read(arguments));
 	},
 
 	/**

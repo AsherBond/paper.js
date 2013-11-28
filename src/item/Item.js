@@ -30,7 +30,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		 */
 		extend: function extend(src) {
 			if (src._serializeFields)
-				src._serializeFields = Base.merge(
+				src._serializeFields = new Base(
 						this.prototype._serializeFields, src._serializeFields);
 			var res = extend.base.apply(this, arguments),
 				proto = res.prototype,
@@ -1313,6 +1313,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		}
 		// Use Matrix#initialize to easily copy over values.
 		copy._matrix.initialize(this._matrix);
+		// Copy over _data as well.
+		copy._data = this._data ? Base.clone(this._data) : null;
 		// Copy over the selection state, use setSelected so the item
 		// is also added to Project#selectedItems if it is selected.
 		copy.setSelected(this._selected);
@@ -1375,8 +1377,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			matrix = new Matrix().scale(scale).translate(topLeft.negate());
 		ctx.save();
 		matrix.applyToContext(ctx);
-		// See Project#draw() for an explanation of Base.merge()
-		this.draw(ctx, Base.merge({ transforms: [matrix] }));
+		// See Project#draw() for an explanation of new Base()
+		this.draw(ctx, new Base({ transforms: [matrix] }));
 		ctx.restore();
 		var raster = new Raster({
 			canvas: canvas,

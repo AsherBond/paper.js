@@ -652,13 +652,6 @@ var Color = Base.extend(new function() {
 		},
 
 		/**
-		 * @return {Color} a copy of the color object
-		 */
-		clone: function() {
-			return new Color(this);
-		},
-
-		/**
 		 * @return {Number[]} the converted components as an array.
 		 */
 		_convert: function(type) {
@@ -759,6 +752,16 @@ var Color = Base.extend(new function() {
 					&& Base.equals(this._components, color._components)
 					|| false;
 		},
+
+		/**
+		 * @name Color#clone
+		 *
+		 * Returns a copy of the color object.
+		 *
+		 * @return {Color} a copy of the color object
+		 */
+		// NOTE: There is no need to actually implement this, since it's the
+		// same as Base#clone()
 
 		/**
 		 * {@grouptitle String Representations}

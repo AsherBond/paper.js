@@ -29,14 +29,14 @@ paper.PaperScope.prototype.PaperScript = (function(root) {
 		exports, define,
 		// The scope into which the library is loaded.
 		scope = this;
-/*#*/ if (options.version == 'dev') {
+/*#*/ if (__options.version == 'dev') {
 	// As the above inclusion loads code into the root scope during dev,
 	// set scope to root, so we can find the library.
 	scope = root;
-/*#*/ } // options.version == 'dev'
-/*#*/ if (options.parser == 'acorn') {
+/*#*/ } // __options.version == 'dev'
+/*#*/ if (__options.parser == 'acorn') {
 /*#*/ include('../../bower_components/acorn/acorn.min.js', { exports: false });
-/*#*/ } else if (options.parser == 'esprima') {
+/*#*/ } else if (__options.parser == 'esprima') {
 /*#*/ include('../../bower_components/esprima/esprima.min.js', { exports: false });
 /*#*/ }
 
@@ -227,9 +227,9 @@ paper.PaperScope.prototype.PaperScript = (function(root) {
 			}
 		}
 		// Now do the parsing magic
-/*#*/ if (options.parser == 'acorn') {
+/*#*/ if (__options.parser == 'acorn') {
 		walkAST(scope.acorn.parse(code, { ranges: true }));
-/*#*/ } else if (options.parser == 'esprima') {
+/*#*/ } else if (__options.parser == 'esprima') {
 		walkAST(scope.esprima.parse(code, { range: true }));
 /*#*/ }
 		return code;
@@ -262,7 +262,7 @@ paper.PaperScope.prototype.PaperScript = (function(root) {
 					onMouseDown, onMouseUp, onMouseDrag, onMouseMove,
 					onKeyDown, onKeyUp, onFrame, onResize;
 				code = compile(code);
-/*#*/ if (options.environment == 'browser') {
+/*#*/ if (__options.environment == 'browser') {
 				if (root.InstallTrigger) { // Firefox
 					// On Firefox, all error numbers inside evaled code are
 					// relative to the line where the eval happened. Totally
@@ -296,9 +296,9 @@ paper.PaperScope.prototype.PaperScript = (function(root) {
 				} else {
 					res = eval(code);
 				}
-/*#*/ } else { // !options.environment == 'browser'
+/*#*/ } else { // !__options.environment == 'browser'
 				res = eval(code);
-/*#*/ } // !options.environment == 'browser'
+/*#*/ } // !__options.environment == 'browser'
 				// Only look for tool handlers if something resembling their
 				// name is contained in the code.
 				if (/on(?:Key|Mouse)(?:Up|Down|Move|Drag)/.test(code)) {
@@ -319,7 +319,8 @@ paper.PaperScope.prototype.PaperScript = (function(root) {
 						size: view.size,
 						delta: new Point()
 					});
-					view.setOnFrame(onFrame);
+					if (onFrame)
+						view.setOnFrame(onFrame);
 					// Automatically draw view at the end.
 					view.draw();
 				}
@@ -328,7 +329,7 @@ paper.PaperScope.prototype.PaperScript = (function(root) {
 		return res;
 	}
 
-/*#*/ if (options.environment == 'browser') {
+/*#*/ if (__options.environment == 'browser') {
 
 	function load() {
 		Base.each(document.getElementsByTagName('script'), function(script) {
@@ -363,7 +364,7 @@ paper.PaperScope.prototype.PaperScript = (function(root) {
 				// Mark script as loaded now.
 				script.setAttribute('data-paper-ignore', true);
 			}
-		}, this, true); // Pass true for asArray to handle HTMLCollection
+		}, this);
 	}
 
 	// Catch cases where paper.js is loaded after the browser event has already
@@ -382,8 +383,8 @@ paper.PaperScope.prototype.PaperScript = (function(root) {
 		lineNumberBase: 0
 	};
 
-/*#*/ } else { // !options.environment == 'browser'
-/*#*/ if (options.environment == 'node') {
+/*#*/ } else { // !__options.environment == 'browser'
+/*#*/ if (__options.environment == 'node') {
 
 	// Register the .pjs extension for automatic compilation as PaperScript
 	var fs = require('fs'),
@@ -401,12 +402,12 @@ paper.PaperScope.prototype.PaperScript = (function(root) {
 		module.exports = scope;
 	};
 
-/*#*/ } // options.environment == 'node'
+/*#*/ } // __options.environment == 'node'
 
 	return PaperScript = {
 		compile: compile,
 		evaluate: evaluate
 	};
 
-/*#*/ } // !options.environment == 'browser'
+/*#*/ } // !__options.environment == 'browser'
 })(this);

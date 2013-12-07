@@ -2018,7 +2018,7 @@ var Path = PathItem.extend(/** @lends Path# */{
 		for (var i = 0; i < length; i++)
 			drawSegment(i);
 		// Close path by drawing first segment again
-		if (path._closed && length > 1)
+		if (path._closed)
 			drawSegment(0);
 	}
 
@@ -2609,14 +2609,10 @@ statics: {
 		}
 
 		function addCap(segment, cap) {
-			switch (cap) {
-			case 'round':
+			if (cap === 'round') {
 				addJoin(segment, cap);
-				break;
-			case 'butt':
-			case 'square':
+			} else {
 				Path._addSquareCap(segment, cap, radius, add); 
-				break;
 			}
 		}
 
@@ -2624,7 +2620,7 @@ statics: {
 			addJoin(segments[i], join);
 		if (closed) {
 			addJoin(segments[0], join);
-		} else {
+		} else if (length > 0) {
 			addCap(segments[0], cap);
 			addCap(segments[segments.length - 1], cap);
 		}

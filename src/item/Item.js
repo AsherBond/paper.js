@@ -52,6 +52,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	_serializeFields: {
 		name: null,
 		matrix: new Matrix(),
+		registration: null,
 		locked: false,
 		visible: true,
 		blendMode: 'normal',
@@ -758,14 +759,21 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	getPosition: function(/* dontLink */) {
 		// Cache position value.
 		// Pass true for dontLink in getCenter(), so receive back a normal point
-		var pos = this._position
-				|| (this._position = this.getBounds().getCenter(true));
+		var position = this._position,
+			ctor = arguments[0] ? Point : LinkedPoint;
 		// Do not cache LinkedPoints directly, since we would not be able to
 		// use them to calculate the difference in #setPosition, as when it is
 		// modified, it would hold new values already and only then cause the
 		// calling of #setPosition.
-		return new (arguments[0] ? Point : LinkedPoint)
-				(pos.x, pos.y, this, 'setPosition');
+		if (!position) {
+			// If a registration point is provided, use it to determine position
+			// base don the matrix. Otherwise use the center of the bounds.
+			var registration = this._registration;
+			position = this._position = registration
+					? this._matrix._transformPoint(registration)
+					: this.getBounds().getCenter(true);
+		}
+		return new ctor(position.x, position.y, this, 'setPosition');
 	},
 
 	setPosition: function(/* point */) {
@@ -773,6 +781,23 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		// translate the item. Pass true for dontLink, as we do not need a
 		// LinkedPoint to simply calculate this distance.
 		this.translate(Point.read(arguments).subtract(this.getPosition(true)));
+	},
+
+	_registration: null,
+
+	getRegistration: function(/* dontLink */) {
+		var reg = this._registration;
+		if (reg) {
+			var ctor = arguments[0] ? Point : LinkedPoint;
+			reg = new ctor(reg.x, reg.y, this, 'setRegistration');
+		}
+		return reg;
+	},
+
+	setRegistration: function(/* point */) {
+		this._registration = Point.read(arguments);
+		// No need for _changed() since the only thing this affects is _position
+		delete this._position;
 	}
 }, Base.each(['getBounds', 'getStrokeBounds', 'getHandleBounds', 'getRoughBounds'],
 	function(name) {
@@ -864,10 +889,12 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 					i < l; i++) {
 				var item = list[i];
 				delete item._bounds;
+				// Delete position as well, since it's depending on bounds.
+				delete item._position;
 				// We need to recursively call _clearBoundsCache, because if the
 				// cache for this item's children is not valid anymore, that
 				// propagates up the DOM tree.
-				if (item != this && item._boundsCache)
+				if (item !== this && item._boundsCache)
 					item._clearBoundsCache();
 			}
 			delete this._boundsCache;
@@ -2641,6 +2668,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 
 	_applyMatrix: function(matrix, applyMatrix) {
 		var children = this._children;
+
 		if (children && children.length > 0) {
 			for (var i = 0, l = children.length; i < l; i++)
 				children[i].transform(matrix, applyMatrix);
@@ -2658,12 +2686,15 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		var matrix = this._matrix;
 		if (this._applyMatrix(matrix, true)) {
 			// When the matrix could be applied, we also need to transform
-			// color styles with matrices (only gradients so far):
-			var style = this._style,
+			// color styles (only gradients so far) and registration point:
+			var registration = this._registration,
+				style = this._style,
 				// pass true for dontMerge so we don't recursively transform
 				// styles on groups' children.
 				fillColor = style.getFillColor(true),
 				strokeColor = style.getStrokeColor(true);
+			if (registration)
+				registration.transform(matrix);
 			if (fillColor)
 				fillColor.transform(matrix);
 			if (strokeColor)

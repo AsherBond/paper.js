@@ -212,6 +212,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			// Clear cached bounds and position whenever geometry changes
 			delete this._bounds;
 			delete this._position;
+			delete this._decomposed;
 		}
 		if (parent && (flags
 				& (/*#=*/ ChangeFlag.GEOMETRY | /*#=*/ ChangeFlag.STROKE))) {
@@ -962,6 +963,57 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 * @ignore
 	 */
 }), /** @lends Item# */{
+	_decompose: function() {
+		return this._decomposed = this._matrix.decompose();
+	},
+
+	/**
+	 * The current rotation of the item, as described by its {@link #matrix}.
+	 *
+	 * @type Number
+	 * @bean
+	 */
+	getRotation: function() {
+		var decomposed = this._decomposed || this._decompose();
+		return decomposed && decomposed.rotation;
+	},
+
+	setRotation: function(rotation) {
+		var current = this.getRotation();
+		if (current != null && rotation != null) {
+			// Preseve the cached _decomposed values over rotation, and only
+			// update the rotation property on it.
+			var decomposed = this._decomposed;
+			this.rotate(rotation - current);
+			decomposed.rotation = rotation;
+			this._decomposed = decomposed;
+		}
+	},
+
+	/**
+	 * The current scaling of the item, as described by its {@link #matrix}.
+	 *
+	 * @type Point
+	 * @bean
+	 */
+	getScaling: function() {
+		var decomposed = this._decomposed || this._decompose();
+		return decomposed && decomposed.scaling;
+	},
+
+	setScaling: function(/* scaling */) {
+		var current = this.getScaling();
+		if (current != null) {
+			// Clone existing points since we're caching internally.
+			var scaling = Point.read(arguments, 0, 0, { clone: true }),
+				// See #setRotation() for preservation of _decomposed.
+				decomposed = this._decomposed;
+			this.scale(scaling.x / current.x, scaling.y / current.y);
+			decomposed.scaling = scaling;
+			this._decomposed = decomposed;
+		}
+	},
+
 	/**
 	 * The item's transformation matrix, defining position and dimensions in
 	 * relation to its parent item in which it is contained.
@@ -997,7 +1049,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 
 	/**
 	 * Specifies whether the group applies transformations directly to its
-	 * children, or whether they are to be stored in its {@link Item#matrix}
+	 * children, or whether they are to be stored in its {@link #matrix}
 	 *
 	 * @type Boolean
 	 * @default true

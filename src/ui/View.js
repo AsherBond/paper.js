@@ -128,9 +128,10 @@ var View = Base.extend(Callback, /** @lends View# */{
 		DomEvent.remove(window, this._windowHandlers);
 /*#*/ } // __options.environment == 'browser'
 		this._element = this._project = null;
-		// Removing all onFrame handlers makes the onFrame handler stop
-		// automatically through its uninstall method.
+		// Remove all onFrame handlers.
+		// TODO: Shouldn't we remove all handlers, automatically
 		this.detach('frame');
+		this._animate = false;
 		this._frameItems = {};
 		return true;
 	},
@@ -146,17 +147,11 @@ var View = Base.extend(Callback, /** @lends View# */{
 		 */
 		onFrame: {
 			install: function() {
-/*#*/ if (__options.environment == 'browser') {
-				this._animate = true;
-				// Request a frame handler straight away to initialize the
-				// sequence of onFrame calls.
-				if (!this._requested)
-					this._requestFrame();
-/*#*/ } // __options.environment == 'browser'
+				this.play();
 			},
 
 			uninstall: function() {
-				this._animate = false;
+				this.pause();
 			}
 		},
 
@@ -205,8 +200,8 @@ var View = Base.extend(Callback, /** @lends View# */{
 		if (this._stats)
 			this._stats.update();
 		this._handlingFrame = false;
-		// Automatically draw view on each frame.
-		this.draw(true);
+		// Automatically update view on each frame.
+		this.update();
 	},
 
 	_animateItem: function(item, animate) {
@@ -241,8 +236,8 @@ var View = Base.extend(Callback, /** @lends View# */{
 		}
 	},
 
-	_redraw: function() {
-		this._project._needsRedraw = true;
+	_update: function() {
+		this._project._needsUpdate = true;
 		if (this._handlingFrame)
 			return;
 		if (this._animate) {
@@ -250,8 +245,8 @@ var View = Base.extend(Callback, /** @lends View# */{
 			// requesting another animation frame.
 			this._handleFrame();
 		} else {
-			// Otherwise simply redraw the view now
-			this.draw();
+			// Otherwise simply update the view now
+			this.update();
 		}
 	},
 
@@ -263,14 +258,14 @@ var View = Base.extend(Callback, /** @lends View# */{
 	 */
 	_changed: function(flags) {
 		if (flags & /*#=*/ ChangeFlag.APPEARANCE)
-			this._project._needsRedraw = true;
+			this._project._needsUpdate = true;
 	},
 
 	_transform: function(matrix) {
 		this._matrix.concatenate(matrix);
 		// Force recalculation of these values next time they are requested.
 		this._bounds = null;
-		this._redraw();
+		this._update();
 	},
 
 	/**
@@ -308,7 +303,7 @@ var View = Base.extend(Callback, /** @lends View# */{
 			size: size,
 			delta: delta
 		});
-		this._redraw();
+		this._update();
 	},
 
 	/**
@@ -397,15 +392,46 @@ var View = Base.extend(Callback, /** @lends View# */{
 	},
 
 	/**
-	 * Draws the view.
+	 * Makes all animation play by adding the view to the request animation
+	 * loop.
+	 */
+	play: function() {
+		this._animate = true;
+/*#*/ if (__options.environment == 'browser') {
+		// Request a frame handler straight away to initialize the
+		// sequence of onFrame calls.
+		if (!this._requested)
+			this._requestFrame();
+/*#*/ } // __options.environment == 'browser'
+	},
+
+	/**
+	 * Makes all animation pause by removing the view to the request animation
+	 * loop.
+	 */
+	pause: function() {
+		this._animate = false;
+	},
+
+	/**
+	 * Updates the view if there are changes. Note that when using built-in
+	 * event hanlders for interaction, animation and load events, this method is
+	 * invoked for you automatically at the end.
 	 *
-	 * @name View#draw
+	 * @name View#update
 	 * @function
 	 */
-	/*
-	draw: function(checkRedraw) {
+	// update: function(checkUpdate) {
+	// },
+
+	/**
+	 * Updates the view if there are changes.
+	 *
+	 * @deprecated use {@link #update()} instead.
+	 */
+	draw: function() {
+		this.update();
 	},
-	*/
 
 	// TODO: getInvalidBounds
 	// TODO: invalidate(rect)
@@ -640,9 +666,9 @@ var View = Base.extend(Callback, /** @lends View# */{
 		view._handleEvent('mousedown', point, event);
 		if (tool = view._scope._tool)
 			tool._handleEvent('mousedown', point, event);
-		// In the end we always call draw(), but pass checkRedraw = true, so we
-		// only redraw the view if anything has changed in the above calls.
-		view.draw(true);
+		// In the end we always call update(), which only updates the view if
+		// anything has changed in the above calls.
+		view.update();
 	}
 
 	function mousemove(event) {
@@ -673,7 +699,7 @@ var View = Base.extend(Callback, /** @lends View# */{
 				tool._handleEvent(dragging && tool.responds('mousedrag')
 						? 'mousedrag' : 'mousemove', point, event);
 			}
-			view.draw(true);
+			view.update();
 		}
 	}
 
@@ -687,7 +713,7 @@ var View = Base.extend(Callback, /** @lends View# */{
 		view._handleEvent('mouseup', point, event);
 		if (tool)
 			tool._handleEvent('mouseup', point, event);
-		view.draw(true);
+		view.update();
 	}
 
 	function selectstart(event) {

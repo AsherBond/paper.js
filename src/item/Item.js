@@ -207,8 +207,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		var parent = this._parent,
 			project = this._project,
 			symbol = this._parentSymbol;
-		// Reset _drawCount on each change.
-		this._drawCount = null;
+		// Reset _updateCount on each change.
+		this._updateCount = null;
 		if (flags & /*#=*/ ChangeFlag.GEOMETRY) {
 			// Clear cached bounds and position whenever geometry changes
 			delete this._bounds;
@@ -231,7 +231,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		}
 		if (project) {
 			if (flags & /*#=*/ ChangeFlag.APPEARANCE) {
-				project._needsRedraw = true;
+				project._needsUpdate = true;
 			}
 			// Have project keep track of changed items so they can be iterated.
 			// This can be used for example to update the SVG tree. Needs to be
@@ -829,7 +829,9 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		// See if we can cache these bounds. We only cache the bounds
 		// transformed with the internally stored _matrix, (the default if no
 		// matrix is passed).
-		var cache = (!matrix || matrix.equals(this._matrix)) && getter;
+		matrix = matrix && matrix.orNullIfIdentity();
+		var _matrix = this._matrix.orNullIfIdentity(),
+			cache = (!matrix || matrix.equals(_matrix)) && getter;
 		// Set up a boundsCache structure that keeps track of items that keep
 		// cached bounds that depend on this item. We store this in our parent,
 		// for multiple reasons:
@@ -861,10 +863,11 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		// If the result of concatinating the passed matrix with our internal
 		// one is an identity transformation, set it to null for faster
 		// processing
-		var identity = this._matrix.isIdentity();
-		matrix = !matrix || matrix.isIdentity()
-				? identity ? null : this._matrix
-				: identity ? matrix : matrix.clone().concatenate(this._matrix);
+		matrix = !matrix
+				? _matrix
+				: _matrix
+					? matrix.clone().concatenate(_matrix)
+					: matrix;
 		// If we're caching bounds on this item, pass it on as cacheItem, so the
 		// children can setup the _boundsCache structures for it.
 		var bounds = this._getBounds(getter, matrix, cache ? this : cacheItem);
@@ -1068,10 +1071,16 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 * @bean
 	 */
 	getGlobalMatrix: function() {
-		// TODO: if drawCount is out of sync, we still need to walk up the chain
-		// and concatenate the matrices.
-		return this._drawCount === this._project._drawCount
+		var matrix = this._updateCount === this._project._updateCount
 				&& this._globalMatrix || null;
+		// If _updateCount is out of sync or no _globalMatrix was calculated
+		// when rendering, iteratively calculate it now.
+		if (!matrix) {
+			matrix = this._globalMatrix = item._matrix.clone();
+			if (this._parent)
+				matrix.concatenate(this._parent.getGlobalMatrix());
+		}
+		return matrix;
 	},
 
 	/**
@@ -1103,20 +1112,33 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		return this._project;
 	},
 
-	_setProject: function(project) {
-		if (this._project != project) {
-			var hasOnFrame = this.responds('frame');
-			if (hasOnFrame)
-				this._animateItem(false);
+	_setProject: function(project, installEvents) {
+		if (this._project !== project) {
+			// Uninstall events before switching project, then install them
+			// again.
+			if (this._project)
+				this._installEvents(false);
 			this._project = project;
-			if (hasOnFrame)
-				this._animateItem(true);
-			if (this._children) {
-				for (var i = 0, l = this._children.length; i < l; i++) {
-					this._children[i]._setProject(project);
-				}
-			}
+			var children = this._children;
+			for (var i = 0, l = children && children.length; i < l; i++)
+				children[i]._setProject(project);
+			// We need to call _installEvents(true) again, but merge it with
+			// handling of installEvents argument below.
+			installEvents = true;
 		}
+		if (installEvents)
+			this._installEvents(true);
+	},
+
+	/**
+	 * Overrides Callback#_installEvents to also call _installEvents on all
+	 * children.
+	 */
+	_installEvents: function _installEvents(install) {
+		_installEvents.base.call(this, install);
+		var children = this._children;
+		for (var i = 0, l = children && children.length; i < l; i++)
+			children[i]._installEvents(install);
 	},
 
 	/**
@@ -1856,7 +1878,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			for (var i = 0, l = items.length; i < l; i++) {
 				var item = items[i];
 				item._parent = this;
-				item._setProject(this._project);
+				item._setProject(this._project, true);
 				// Setting the name again makes sure all name lookup structures
 				// are kept in sync.
 				if (item._name)
@@ -2010,8 +2032,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 				this._removeNamed();
 			if (this._index != null)
 				Base.splice(this._parent._children, null, this._index, 1);
-			if (this.responds('frame'))
-				this._animateItem(false);
+			this._installEvents(false);
 			// Notify parent of changed hierarchy
 			if (notify)
 				this._parent._changed(/*#=*/ Change.HIERARCHY);
@@ -2708,6 +2729,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		}
 		if (!_dontNotify)
 			this._changed(/*#=*/ Change.GEOMETRY);
+		return this;
 	},
 
 	/**
@@ -2719,7 +2741,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 */
 	globalToLocal: function(/* point */) {
 		var matrix = this.getGlobalMatrix();
-		return matrix && matrix._transformPoint(Point.read(arguments));
+		return matrix && matrix._inverseTransform(Point.read(arguments));
 	},
 
 	/**
@@ -2731,7 +2753,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 */
 	localToGlobal: function(/* point */) {
 		var matrix = this.getGlobalMatrix();
-		return matrix && matrix._inverseTransform(Point.read(arguments));
+		return matrix && matrix._transformPoint(Point.read(arguments));
 	},
 
 	/**
@@ -3318,16 +3340,13 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		}
 	},
 
-	// TODO: Implement View into the drawing.
-	// TODO: Optimize temporary canvas drawing to ignore parts that are
-	// outside of the visible view.
 	draw: function(ctx, param) {
 		if (!this._visible || this._opacity === 0)
 			return;
-		// Each time the project gets drawn, it's _drawCount is increased.
-		// Keep the _drawCount of drawn items in sync, so we have an easy
+		// Each time the project gets drawn, it's _updateCount is increased.
+		// Keep the _updateCount of drawn items in sync, so we have an easy
 		// way to know for which selected items we need to draw selection info.
-		this._drawCount = this._project._drawCount;
+		this._updateCount = this._project._updateCount;
 		// Keep calculating the current global matrix, by keeping a history
 		// and pushing / popping as we go along.
 		var trackTransforms = param.trackTransforms,

@@ -47,6 +47,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	// Exceptions are Raster, PlacedSymbol, Clip and Shape.
 	_transformContent: true,
 	_boundsSelected: false,
+	_selectChildren: false,
 	// Provide information about fields to be serialized, with their defaults
 	// that can be ommited.
 	_serializeFields: {
@@ -569,9 +570,9 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	_guide: false,
 
 	/**
-	 * Specifies whether an item is selected and will also return {@code true}
-	 * if the item is partially selected (groups with some selected or partially
-	 * selected paths).
+	 * Specifies whether the item is selected. This will also return
+	 * {@code true} for {@link Group} items if they are partially selected, e.g.
+	 * groups containing selected or partially selected paths.
 	 *
 	 * Paper.js draws the visual outlines of selected items on top of your
 	 * project. This can be useful for debugging, as it allows you to see the
@@ -583,6 +584,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 * @bean
 	 * @see Project#selectedItems
 	 * @see Segment#selected
+	 * @see Curve#selected
 	 * @see Point#selected
 	 *
 	 * @example {@paperscript}
@@ -594,7 +596,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 * path.selected = true; // Select the path
 	 */
 	isSelected: function() {
-		if (this._children) {
+		if (this._selectChildren) {
 			for (var i = 0, l = this._children.length; i < l; i++)
 				if (this._children[i].isSelected())
 					return true;
@@ -602,14 +604,14 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		return this._selected;
 	},
 
-	setSelected: function(selected /*, noChildren */) {
+	setSelected: function(selected, noChildren) {
 		// Don't recursively call #setSelected() if it was called with
 		// noChildren set to true, see #setFullySelected().
-		if (this._children && !arguments[1]) {
+		if (!noChildren && this._selectChildren) {
 			for (var i = 0, l = this._children.length; i < l; i++)
 				this._children[i].setSelected(selected);
 		}
-		if ((selected = !!selected) != this._selected) {
+		if ((selected = !!selected) ^ this._selected) {
 			this._selected = selected;
 			this._project._updateSelection(this);
 			this._changed(/*#=*/ Change.ATTRIBUTE);
@@ -799,21 +801,29 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		delete this._position;
 	}
 }, Base.each(['getBounds', 'getStrokeBounds', 'getHandleBounds',
-		'getRoughBounds', 'getInternalBounds'],
+		'getRoughBounds', 'getInternalBounds', 'getInternalRoughBounds'],
 	function(key) {
 		// Produce getters for bounds properties. These handle caching, matrices
 		// and redirect the call to the private _getBounds, which can be
 		// overridden by subclasses, see below.
-		var internal = key === 'getInternalBounds';
+		// Treat internalBounds and internalRoughBounds untransformed, as
+		// required by the code that uses these methods internally, but make
+		// sure they can be cached like all the others as well.
+		// Pass on the getter that these version actually use, untransformed,
+		// as internalGetter.
+		// NOTE: These need to be versions of other methods, as otherwise the
+		// cache gets messed up.
+		var match = key.match(/^getInternal(.*)$/),
+			internalGetter = match ? 'get' + match[1] : null;
 		this[key] = function(/* matrix */) {
 			var getter = this._boundsGetter,
 				// Allow subclasses to override _boundsGetter if they use
 				// the same calculations for multiple type of bounds.
 				// The default is key:
-				bounds = this._getCachedBounds(!internal
+				bounds = this._getCachedBounds(!internalGetter
 						&& (typeof getter === 'string'
 							? getter : getter && getter[key])
-						|| key, arguments[0], null, internal);
+						|| key, arguments[0], null, internalGetter);
 			// If we're returning 'bounds', create a LinkedRectangle that uses
 			// the setBounds() setter to update the Item whenever the bounds are
 			// changed:
@@ -883,12 +893,13 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 * Private method that deals with the calling of _getBounds, recursive
 	 * matrix concatenation and handles all the complicated caching mechanisms.
 	 */
-	_getCachedBounds: function(getter, matrix, cacheItem, internal) {
+	_getCachedBounds: function(getter, matrix, cacheItem, internalGetter) {
 		// See if we can cache these bounds. We only cache the bounds
 		// transformed with the internally stored _matrix, (the default if no
 		// matrix is passed).
 		matrix = matrix && matrix.orNullIfIdentity();
-		var _matrix = internal ? null : this._matrix.orNullIfIdentity(),
+		// Do not transform by the internal matrix if there is a internalGetter.
+		var _matrix = internalGetter ? null : this._matrix.orNullIfIdentity(),
 			cache = (!matrix || matrix.equals(_matrix)) && getter;
 		// Set up a boundsCache structure that keeps track of items that keep
 		// cached bounds that depend on this item. We store this in our parent,
@@ -905,13 +916,12 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			// Set-up the parent's boundsCache structure if it does not
 			// exist yet and add the cacheItem to it.
 			var id = cacheItem._id,
-				ref = cacheParent._boundsCache
-					= cacheParent._boundsCache || {
-				// Use both a hashtable for ids and an array for the list,
-				// so we can keep track of items that were added already
-				ids: {},
-				list: []
-			};
+				ref = cacheParent._boundsCache = cacheParent._boundsCache || {
+					// Use both a hashtable for ids and an array for the list,
+					// so we can keep track of items that were added already
+					ids: {},
+					list: []
+				};
 			if (!ref.ids[id]) {
 				ref.list.push(cacheItem);
 				ref.ids[id] = cacheItem;
@@ -929,8 +939,11 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 					: matrix;
 		// If we're caching bounds on this item, pass it on as cacheItem, so the
 		// children can setup the _boundsCache structures for it.
-		var bounds = this._getBounds(getter === 'getInternalBounds'
-				? 'getBounds' : getter, matrix, cache ? this : cacheItem);
+		// getInternalBounds is getBounds untransformed. Do not replace earlier,
+		// so we can cache both separately, since they're not in the same 
+		// transformation space!
+		var bounds = this._getBounds(internalGetter || getter, matrix,
+				cache ? this : cacheItem);
 		// If we can cache the result, update the _bounds cache structure
 		// before returning
 		if (cache) {
@@ -938,7 +951,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 				this._bounds = {};
 			var cached = this._bounds[cache] = bounds.clone();
 			// Mark as internal, so Item#transform() won't transform it!
-			cached._internal = internal;
+			cached._internal = !!internalGetter;
 		}
 		return bounds;
 	},
@@ -1087,7 +1100,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		if (matrix && matrix._updateVersion !== updateVersion)
 			matrix = null;
 		if (!matrix) {
-			matrix = this._globalMatrix = item._matrix.clone();
+			matrix = this._globalMatrix = this._matrix.clone();
 			if (this._parent)
 				matrix.concatenate(this._parent.getGlobalMatrix());
 			matrix._updateVersion = updateVersion;

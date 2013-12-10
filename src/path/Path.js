@@ -1756,7 +1756,10 @@ var Path = PathItem.extend(/** @lends Path# */{
 			style = this.getStyle(),
 			segments = this._segments,
 			closed = this._closed,
-			tolerance = options.tolerance,
+			// transformed tolerance padding, see Item#hitTest. We will add
+			// stroke padding on top if stroke is defined.
+			tolerancePadding = options._tolerancePadding,
+			strokePadding = tolerancePadding,
 			join, cap, miterLimit,
 			area, loc, res,
 			hasStroke = options.stroke && style.hasStroke(),
@@ -1770,63 +1773,57 @@ var Path = PathItem.extend(/** @lends Path# */{
 				join = style.getStrokeJoin();
 				cap = style.getStrokeCap();
 				miterLimit = radius * style.getMiterLimit();
+				// Add the stroke radius to tolerance padding.
+				strokePadding = tolerancePadding.add(new Point(radius, radius));
 			} else {
 				join = cap = 'round';
 			}
-			// Add some tolerance, so even when no stroke is set, will match for
-			// stroke locations.
-			radius += tolerance;
+			// Using tolerance padding for fill tests will also work if there is
+			// no stroke, in which case radius = 0 and we will test for stroke
+			// locations to extend the fill area by tolerance.
 		}
 
-		function checkPoint(seg, pt, name) {
-			if (point.getDistance(pt) < tolerance)
-				return new HitResult(name, that, { segment: seg, point: pt });
+		function isCloseEnough(pt, padding) {
+			return point.subtract(pt).divide(padding).length <= 1;
+		}
+
+		function checkSegmentPoint(seg, pt, name) {
+			if (!options.selected || pt.isSelected()) {
+				var anchor = seg._point;
+				if (pt !== anchor)
+					pt = pt.add(anchor);
+				if (isCloseEnough(pt, strokePadding)) {
+					return new HitResult(name, that, {
+						segment: seg,
+						point: pt
+					});
+				}
+			}
 		}
 
 		function checkSegmentPoints(seg, ends) {
-			var pt = seg._point;
 			// Note, when checking for ends, we don't also check for handles,
 			// since this will happen afterwards in a separate loop, see below.
-			return (ends || options.segments) && checkPoint(seg, pt, 'segment')
+			return (ends || options.segments)
+				&& checkSegmentPoint(seg, seg._point, 'segment')
 				|| (!ends && options.handles) && (
-					checkPoint(seg, pt.add(seg._handleIn), 'handle-in') ||
-					checkPoint(seg, pt.add(seg._handleOut), 'handle-out'));
+					checkSegmentPoint(seg, seg._handleIn, 'handle-in') ||
+					checkSegmentPoint(seg, seg._handleOut, 'handle-out'));
 		}
 
 		// Code to check stroke join / cap areas
 
 		function addAreaPoint(point) {
-			area.push(point);
-		}
-
-		// In order to be able to reuse crossings counting code, we describe
-		// each line as a curve values array.
-		function getAreaCurve(index) {
-			var p1 = area[index],
-				p2 = area[(index + 1) % area.length];
-			return [p1.x, p1.y, p1.x, p1.y, p2.x, p2.y, p2.x ,p2.y];
-		}
-
-		function isInArea(point) {
-			var length = area.length,
-				previous = getAreaCurve(length - 1),
-				roots1 = [],
-				roots2 = [],
-				winding = 0;
-			for (var i = 0; i < length; i++) {
-				var curve = getAreaCurve(i);
-				winding += Curve._getWinding(curve, previous, point.x, point.y,
-						roots1, roots2);
-				previous = curve;
-			}
-			return !!winding;
+			area.add(point);
 		}
 
 		function checkSegmentStroke(segment) {
 			// Handle joins / caps that are not round specificelly, by
 			// hit-testing their polygon areas.
 			if (join !== 'round' || cap !== 'round') {
-				area = [];
+				// Create an 'internal' path without id and outside the DOM
+				// to run the hit-test on it.
+				area = new Path({ internal: true, closed: true });
 				if (closed || segment._index > 0
 						&& segment._index < segments.length - 1) {
 					// It's a join. See that it's not a round one (one of
@@ -1840,12 +1837,18 @@ var Path = PathItem.extend(/** @lends Path# */{
 					Path._addSquareCap(segment, cap, radius, addAreaPoint, true);
 				}
 				// See if the above produced an area to check for
-				if (area.length > 0)
-					return isInArea(point);
+				if (!area.isEmpty()) {
+					// Also use stroke check with tolerancePadding if the point
+					// is not inside the area itself, to use test caps and joins
+					// with same tolerance.
+					var loc;
+					return area.contains(point)
+						|| (loc = area.getNearestLocation(point))
+							&& isCloseEnough(loc.getPoint(), tolerancePadding);
+				}
 			}
-			// Fallback scenario is a round join / cap, but make sure we
-			// didn't check for areas already.
-			return point.getDistance(segment._point) <= radius;
+			// Fallback scenario is a round join / cap.
+			return isCloseEnough(segment._point, strokePadding);
 		}
 
 		// If we're asked to query for segments, ends or handles, do all that
@@ -1855,13 +1858,12 @@ var Path = PathItem.extend(/** @lends Path# */{
 					|| checkSegmentPoints(segments[segments.length - 1], true))
 				return res;
 		} else if (options.segments || options.handles) {
-			for (var i = 0, l = segments.length; i < l; i++) {
+			for (var i = 0, l = segments.length; i < l; i++)
 				if (res = checkSegmentPoints(segments[i]))
 					return res;
-			}
 		}
 		// If we're querying for stroke, perform that before fill
-		if (radius > 0) {
+		if (radius != null) {
 			loc = this.getNearestLocation(point);
 			if (loc) {
 				// Now see if we're on a segment, and if so, check for its
@@ -1871,7 +1873,7 @@ var Path = PathItem.extend(/** @lends Path# */{
 				if (parameter === 0 || parameter === 1) {
 					if (!checkSegmentStroke(loc.getSegment()))
 						loc = null;
-				} else  if (loc._distance > radius) {
+				} else  if (!isCloseEnough(loc.getPoint(), strokePadding)) {
 					loc = null;
 				}
 			}
@@ -2532,55 +2534,12 @@ statics: {
 	 * @private
 	 */
 	getStrokeBounds: function(segments, closed, style, matrix) {
-		/**
-		 * Returns the horizontal and vertical padding that a transformed round
-		 * stroke adds to the bounding box, by calculating the dimensions of a
-		 * rotated ellipse.
-		 */
-		function getPenPadding(radius, matrix) {
-			if (!matrix)
-				return [radius, radius];
-			// If a matrix is provided, we need to rotate the stroke circle
-			// and calculate the bounding box of the resulting rotated elipse:
-			// Get rotated hor and ver vectors, and determine rotation angle
-			// and elipse values from them:
-			var mx = matrix.shiftless(),
-				hor = mx.transform(new Point(radius, 0)),
-				ver = mx.transform(new Point(0, radius)),
-				phi = hor.getAngleInRadians(),
-				a = hor.getLength(),
-				b = ver.getLength();
-			// Formula for rotated ellipses:
-			// x = cx + a*cos(t)*cos(phi) - b*sin(t)*sin(phi)
-			// y = cy + b*sin(t)*cos(phi) + a*cos(t)*sin(phi)
-			// Derivates (by Wolfram Alpha):
-			// derivative of x = cx + a*cos(t)*cos(phi) - b*sin(t)*sin(phi)
-			// dx/dt = a sin(t) cos(phi) + b cos(t) sin(phi) = 0
-			// derivative of y = cy + b*sin(t)*cos(phi) + a*cos(t)*sin(phi)
-			// dy/dt = b cos(t) cos(phi) - a sin(t) sin(phi) = 0
-			// This can be simplified to:
-			// tan(t) = -b * tan(phi) / a // x
-			// tan(t) =  b * cot(phi) / a // y
-			// Solving for t gives:
-			// t = pi * n - arctan(b * tan(phi) / a) // x
-			// t = pi * n + arctan(b * cot(phi) / a)
-			//   = pi * n + arctan(b / tan(phi) / a) // y
-			var sin = Math.sin(phi),
-				cos = Math.cos(phi),
-				tan = Math.tan(phi),
-				tx = -Math.atan(b * tan / a),
-				ty = Math.atan(b / (tan * a));
-			// Due to symetry, we don't need to cycle through pi * n solutions:
-			return [Math.abs(a * Math.cos(tx) * cos - b * Math.sin(tx) * sin),
-					Math.abs(b * Math.sin(ty) * cos + a * Math.cos(ty) * sin)];
-		}
-
 		// TODO: Find a way to reuse 'bounds' cache instead?
 		if (!style.hasStroke())
 			return Path.getBounds(segments, closed, style, matrix);
 		var length = segments.length - (closed ? 0 : 1),
 			radius = style.getStrokeWidth() / 2,
-			padding = getPenPadding(radius, matrix),
+			padding = Path._getPenPadding(radius, matrix),
 			bounds = Path.getBounds(segments, closed, style, matrix, padding),
 			join = style.getStrokeJoin(),
 			cap = style.getStrokeCap(),
@@ -2623,6 +2582,49 @@ statics: {
 			addCap(segments[segments.length - 1], cap);
 		}
 		return bounds;
+	},
+
+	/**
+	 * Returns the horizontal and vertical padding that a transformed round
+	 * stroke adds to the bounding box, by calculating the dimensions of a
+	 * rotated ellipse.
+	 */
+	_getPenPadding: function(radius, matrix) {
+		if (!matrix)
+			return [radius, radius];
+		// If a matrix is provided, we need to rotate the stroke circle
+		// and calculate the bounding box of the resulting rotated elipse:
+		// Get rotated hor and ver vectors, and determine rotation angle
+		// and elipse values from them:
+		var mx = matrix.shiftless(),
+			hor = mx.transform(new Point(radius, 0)),
+			ver = mx.transform(new Point(0, radius)),
+			phi = hor.getAngleInRadians(),
+			a = hor.getLength(),
+			b = ver.getLength();
+		// Formula for rotated ellipses:
+		// x = cx + a*cos(t)*cos(phi) - b*sin(t)*sin(phi)
+		// y = cy + b*sin(t)*cos(phi) + a*cos(t)*sin(phi)
+		// Derivates (by Wolfram Alpha):
+		// derivative of x = cx + a*cos(t)*cos(phi) - b*sin(t)*sin(phi)
+		// dx/dt = a sin(t) cos(phi) + b cos(t) sin(phi) = 0
+		// derivative of y = cy + b*sin(t)*cos(phi) + a*cos(t)*sin(phi)
+		// dy/dt = b cos(t) cos(phi) - a sin(t) sin(phi) = 0
+		// This can be simplified to:
+		// tan(t) = -b * tan(phi) / a // x
+		// tan(t) =  b * cot(phi) / a // y
+		// Solving for t gives:
+		// t = pi * n - arctan(b * tan(phi) / a) // x
+		// t = pi * n + arctan(b * cot(phi) / a)
+		//   = pi * n + arctan(b / tan(phi) / a) // y
+		var sin = Math.sin(phi),
+			cos = Math.cos(phi),
+			tan = Math.tan(phi),
+			tx = -Math.atan(b * tan / a),
+			ty = Math.atan(b / (tan * a));
+		// Due to symetry, we don't need to cycle through pi * n solutions:
+		return [Math.abs(a * Math.cos(tx) * cos - b * Math.sin(tx) * sin),
+				Math.abs(b * Math.sin(ty) * cos + a * Math.cos(ty) * sin)];
 	},
 
 	_addSquareJoin: function(segment, join, radius, miterLimit, addPoint, area) {
@@ -2694,20 +2696,20 @@ statics: {
 			x2 = -x1,
 			y1 = x1,
 			y2 = x2;
-		strokePadding = strokePadding / 2 || 0;
-		joinPadding = joinPadding / 2 || 0;
 		for (var i = 0, l = segments.length; i < l; i++) {
 			var segment = segments[i];
 			segment._transformCoordinates(matrix, coords, false);
 			for (var j = 0; j < 6; j += 2) {
 				// Use different padding for points or handles
 				var padding = j == 0 ? joinPadding : strokePadding,
+					paddingX = padding ? padding[0] : 0,
+					paddingY = padding ? padding[1] : 0,
 					x = coords[j],
 					y = coords[j + 1],
-					xn = x - padding,
-					xx = x + padding,
-					yn = y - padding,
-					yx = y + padding;
+					xn = x - paddingX,
+					xx = x + paddingX,
+					yn = y - paddingY,
+					yx = y + paddingY;
 				if (xn < x1) x1 = xn;
 				if (xx > x2) x2 = xx;
 				if (yn < y1) y1 = yn;
@@ -2727,17 +2729,16 @@ statics: {
 		// Delegate to handleBounds, but pass on radius values for stroke and
 		// joins. Hanlde miter joins specially, by passing the largets radius
 		// possible.
-		var strokeWidth = style.getStrokeColor() ? style.getStrokeWidth() : 0,
-			joinWidth = strokeWidth;
-		if (strokeWidth === 0) {
-			strokeWidth = /*#=*/ Numerical.TOLERANCE;
-		} else {
+		var strokeRadius = style.hasStroke() ? style.getStrokeWidth() / 2 : 0,
+			joinRadius = strokeRadius;
+		if (strokeRadius > 0) {
 			if (style.getStrokeJoin() === 'miter')
-				joinWidth = strokeWidth * style.getMiterLimit();
+				joinRadius = strokeRadius * style.getMiterLimit();
 			if (style.getStrokeCap() === 'square')
-				joinWidth = Math.max(joinWidth, strokeWidth * Math.sqrt(2));
+				joinRadius = Math.max(joinRadius, strokeRadius * Math.sqrt(2));
 		}
 		return Path.getHandleBounds(segments, closed, style, matrix,
-				strokeWidth, joinWidth);
+				Path._getPenPadding(strokeRadius, matrix),
+				Path._getPenPadding(joinRadius, matrix));
 	}
 }});

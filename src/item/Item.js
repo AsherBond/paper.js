@@ -71,7 +71,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	_initialize: function(props, point) {
 		// Define this Item's unique id. But allow the creation of internally
 		// used paths with no ids.
-		var internal = props && props._internal === true;
+		var internal = props && props.internal === true;
 		if (!internal)
 			this._id = Item._id = (Item._id || 0) + 1;
 		// Handle matrix before everything else, to avoid issues with
@@ -1106,7 +1106,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		if (!matrix) {
 			matrix = this._globalMatrix = this._matrix.clone();
 			if (this._parent)
-				matrix.concatenate(this._parent.getGlobalMatrix());
+				matrix.preConcatenate(this._parent.getGlobalMatrix());
 			matrix._updateVersion = updateVersion;
 		}
 		return matrix;
@@ -1616,12 +1616,26 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		// Check if the point is withing roughBounds + tolerance, but only if
 		// this item does not have children, since we'd have to travel up the
 		// chain already to determine the rough bounds.
-		if (!this._children && !this.getRoughBounds()
-				.expand(2 * options.tolerance)._containsPoint(point))
+		var matrix = this._matrix,
+			parentTotalMatrix = options._totalMatrix,
+			// Keep the accumulated matrices up to this item in options, so we
+			// can keep calculating the correct _tolerancePadding values.
+			totalMatrix = options._totalMatrix = parentTotalMatrix.clone()
+				.concatenate(matrix),
+			// Calculate the transformed padding as 2D size that describes the
+			// transformed tolerance circle / ellipse. Make sure it's never 0
+			// since we're using it for division.
+			tolerancePadding = options._tolerancePadding = new Size(
+						Path._getPenPadding(1, totalMatrix.inverted())
+					).multiply(
+						Math.max(options.tolerance, /*#=*/ Numerical.TOLERANCE)
+					);
+		// Transform point to local coordinates.
+		point = matrix._inverseTransform(point);
+
+		if (!this._children && !this.getInternalRoughBounds()
+				.expand(tolerancePadding.multiply(2))._containsPoint(point))
 			return null;
-		// Transform point to local coordinates but use untransformed point
-		// for bounds check above.
-		point = this._matrix._inverseTransform(point);
 		// Filter for type, guides and selected items if that's required.
 		var checkSelf = !(options.guides && !this._guide
 				|| options.selected && !this._selected
@@ -1631,9 +1645,9 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 
 		function checkBounds(type, part) {
 			var pt = bounds['get' + part]();
-			// TODO: We need to transform the point back to the coordinate
-			// system of the DOM level on which the inquiry was started!
-			if (point.getDistance(pt) < options.tolerance)
+			// Since there are transformations, we cannot simply use a numerical
+			// tolerance value. Instead, we divide by a padding size, see above.
+			if (point.subtract(pt).divide(tolerancePadding).length <= 1)
 				return new HitResult(type, that,
 						{ name: Base.hyphenate(part), point: pt });
 		}
@@ -1667,11 +1681,14 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			res = this._hitTest(point, options);
 		// Transform the point back to the outer coordinate system.
 		if (res && res.point)
-			res.point = that._matrix.transform(res.point);
+			res.point = matrix.transform(res.point);
+		// Restore totalMatrix for next child.
+		options._totalMatrix = parentTotalMatrix;
 		return res;
 	},
 
 	_getChildHitTestOptions: function(options) {
+		// This is overriden in CompoundPath, for treatment of type === 'path'.
 		return options;
 	},
 
@@ -2697,8 +2714,9 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			// in _bounds and transform each.
 			for (var key in bounds) {
 				var rect = bounds[key];
-				// See _getCachedBounds for an explanation of this:
-				if (!rect._internal)
+				// If these are internal bounds, only transform them if this
+				// item transforming its content.
+				if (this._transformContent || !rect._internal)
 					matrix._transformBounds(rect, rect);
 			}
 			// If we have cached bounds, update _position again as its 
@@ -3377,9 +3395,11 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		// Keep calculating the current global matrix, by keeping a history
 		// and pushing / popping as we go along.
 		var trackTransforms = param.trackTransforms,
-			transforms = param.transforms,
+			// If transforms does not exist, set it up with the identity matrix
+			transforms = param.transforms = param.transforms || [new Matrix()],
+			matrix = this._matrix,
 			parentMatrix = transforms[transforms.length - 1],
-			globalMatrix = parentMatrix.clone().concatenate(this._matrix);
+			globalMatrix = parentMatrix.clone().concatenate(matrix);
 		// If this item is not invertible, do not draw it, since it would cause
 		// empty ctx.currentPath and mess up caching. It appears to also be a
 		// good idea generally to not draw in such cirucmstances, e.g. SVG
@@ -3388,6 +3408,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			return;
 		// Only keep track of transformation if told so. See Project#draw()
 		if (trackTransforms) {
+			if (!transforms)
+				transforms = param.transforms = [];
 			transforms.push(this._globalMatrix = globalMatrix);
 			// We also keep the cached _globalMatrix versioned.
 			globalMatrix._updateVersion = updateVersion;
@@ -3443,7 +3465,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 			ctx.translate(-itemOffset.x, -itemOffset.y);
 		}
 		// Apply globalMatrix when drawing into temporary canvas.
-		(direct ? this._matrix : globalMatrix).applyToContext(ctx);
+		(direct ? matrix : globalMatrix).applyToContext(ctx);
 		// If we're drawing into a separate canvas and a clipItem is defined for
 		// the current rendering loop, we need to draw the clip item again.
 		if (!direct && param.clipItem)

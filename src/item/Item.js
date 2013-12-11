@@ -53,7 +53,7 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	_serializeFields: {
 		name: null,
 		matrix: new Matrix(),
-		registration: null,
+		anchor: null,
 		locked: false,
 		visible: true,
 		blendMode: 'normal',
@@ -726,8 +726,9 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	/**
 	 * {@grouptitle Position and Bounding Boxes}
 	 *
-	 * The item's position within the project. This is the
-	 * {@link Rectangle#center} of the item's {@link #bounds} rectangle.
+	 * The item's position within the parent item's coordinate system. By
+	 * default, this is the {@link Rectangle#center} of the item's
+	 * {@link #bounds} rectangle.
 	 *
 	 * @type Point
 	 * @bean
@@ -771,11 +772,11 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		// modified, it would hold new values already and only then cause the
 		// calling of #setPosition.
 		if (!position) {
-			// If a registration point is provided, use it to determine position
-			// base don the matrix. Otherwise use the center of the bounds.
-			var registration = this._registration;
-			position = this._position = registration
-					? this._matrix._transformPoint(registration)
+			// If an anchor point is provided, use it to determine position
+			// based on the matrix. Otherwise use the center of the bounds.
+			var anchor = this._anchor;
+			position = this._position = anchor
+					? this._matrix._transformPoint(anchor)
 					: this.getBounds().getCenter(true);
 		}
 		return new ctor(position.x, position.y, this, 'setPosition');
@@ -788,22 +789,40 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		this.translate(Point.read(arguments).subtract(this.getPosition(true)));
 	},
 
-	_registration: null,
-
-	getRegistration: function(/* dontLink */) {
-		var reg = this._registration;
-		if (reg) {
+	/**
+	 * The item's anchor point specified in the item coordinate system, defining
+	 * the reference point for {@link #position}, as well as the pivot point for
+	 * all transformations. By default, it is set to {@code null}, meaning the
+	 * {@link Rectangle#center} of the item's {@link #bounds} rectangle is used
+	 * as the anchor.
+	 *
+	 * @type Point
+	 * @bean
+	 * @default null
+	 *
+	 * @example {@paperscript}
+	 */
+	getAnchor: function(/* dontLink */) {
+		var anchor = this._anchor;
+		if (anchor) {
 			var ctor = arguments[0] ? Point : LinkedPoint;
-			reg = new ctor(reg.x, reg.y, this, 'setRegistration');
+			anchor = new ctor(anchor.x, anchor.y, this, 'setAnchor');
 		}
-		return reg;
+		return anchor;
 	},
 
-	setRegistration: function(/* point */) {
-		this._registration = Point.read(arguments);
+	setAnchor: function(/* point */) {
+		this._anchor = Point.read(arguments);
 		// No need for _changed() since the only thing this affects is _position
 		delete this._position;
-	}
+	},
+
+	_anchor: null,
+
+	// TODO: Keep these around for a bit since it was introduced on the mailing
+	// list, then remove in a while.
+	getRegistration: '#getAnchor',
+	setRegistration: '#setAnchor'
 }, Base.each(['getBounds', 'getStrokeBounds', 'getHandleBounds',
 		'getRoughBounds', 'getInternalBounds', 'getInternalRoughBounds'],
 	function(key) {
@@ -1025,7 +1044,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	},
 
 	/**
-	 * The current rotation of the item, as described by its {@link #matrix}.
+	 * The current rotation angle of the item, as described by its
+	 * {@link #matrix}.
 	 *
 	 * @type Number
 	 * @bean
@@ -1048,7 +1068,8 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	},
 
 	/**
-	 * The current scaling of the item, as described by its {@link #matrix}.
+	 * The current scale factor of the item, as described by its
+	 * {@link #matrix}.
 	 *
 	 * @type Point
 	 * @bean
@@ -1617,14 +1638,15 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		// chain already to determine the rough bounds.
 		var matrix = this._matrix,
 			parentTotalMatrix = options._totalMatrix,
+			view = this._project.view,
 			// Keep the accumulated matrices up to this item in options, so we
 			// can keep calculating the correct _tolerancePadding values.
 			totalMatrix = options._totalMatrix = parentTotalMatrix
 					? parentTotalMatrix.clone().concatenate(matrix)
 					// If this is the first one in the recursion, factor in the
 					// zoom of the view and the globalMatrix of the item.
-					: this._project.view._matrix.clone().concatenate(
-						this.getGlobalMatrix()),
+					: this.getGlobalMatrix().clone().preConcatenate(
+						view ? view._matrix : new Matrix()),
 			// Calculate the transformed padding as 2D size that describes the
 			// transformed tolerance circle / ellipse. Make sure it's never 0
 			// since we're using it for division.
@@ -2565,9 +2587,10 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 	 * 	path.rotate(3, view.center);
 	 * }
 	 */
-	rotate: function(angle, center) {
+	rotate: function(angle /*, center */) {
 		return this.transform(new Matrix().rotate(angle,
-				center || this.getPosition(true)));
+				Point.read(arguments, 1, 0, { readNull: true })
+					|| this.getPosition(true)));
 	}
 }, Base.each(['scale', 'shear', 'skew'], function(name) {
 	this[name] = function() {
@@ -2758,15 +2781,15 @@ var Item = Base.extend(Callback, /** @lends Item# */{
 		var matrix = this._matrix;
 		if (this._applyMatrix(matrix, true)) {
 			// When the matrix could be applied, we also need to transform
-			// color styles (only gradients so far) and registration point:
-			var registration = this._registration,
+			// color styles (only gradients so far) and anchor point:
+			var anchor = this._anchor,
 				style = this._style,
 				// pass true for dontMerge so we don't recursively transform
 				// styles on groups' children.
 				fillColor = style.getFillColor(true),
 				strokeColor = style.getStrokeColor(true);
-			if (registration)
-				registration.transform(matrix);
+			if (anchor)
+				anchor.transform(matrix);
 			if (fillColor)
 				fillColor.transform(matrix);
 			if (strokeColor)

@@ -18,7 +18,6 @@
 
 	var amount = 8;
 	var step = view.size.width / (amount + 1);
-	var scale = view.size.height / 1.5;
 	var flip = false;
 
 	for (var i = 0; i <= amount; i++) {
@@ -32,7 +31,7 @@
 		strokeWidth: 30,
 		strokeJoin: 'round',
 		strokeCap: 'butt',
-		registration: leftPath.position,
+		anchor: leftPath.position,
 		position: view.center
 	});
 
@@ -41,15 +40,15 @@
 	}
 
 	function onKeyDown(event) {
-		if (event.key === 'space') {
+		if (event.key === 'space')
 			group.fullySelected = !group.fullySelected;
-		}
 	}
 
 	var audio, source, analyserL, analyserR, freqByteData;
 
 	view.onFrame = function() {
 		var step = view.size.width / (amount + 1);
+		var scale = view.size.height / 1.5;
 		analyserL.getByteFrequencyData(freqByteData);
 		var leftBands = getEqualizerBands(freqByteData, true);
 		analyserR.getByteFrequencyData(freqByteData);
@@ -60,7 +59,7 @@
 		}
 		leftPath.smooth();
 		rightPath.smooth();
-		group.registration = [leftPath.position.x, 0];
+		group.anchor = [leftPath.position.x, 0];
 		group.position = view.center;
 	}
 
@@ -133,7 +132,7 @@
 		}
 		return bands;
 	}
-	</script>
+</script>
 </head>
 <body>
 	<canvas id="canvas" resize></canvas>

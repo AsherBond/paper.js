@@ -238,9 +238,8 @@ var Color = Base.extend(new function() {
 				parser = componentParsers[type][index] = name === 'gradient'
 					? function(value) {
 						var current = this._components[0];
-						value = Gradient.read(
-								Array.isArray(value) ? value : arguments,
-								0, 0, { readNull: true });
+						value = Gradient.read(Array.isArray(value) ? value
+								: arguments, 0, { readNull: true });
 						if (current !== value) {
 							if (current)
 								current._removeOwner(this);
@@ -251,7 +250,7 @@ var Color = Base.extend(new function() {
 					}
 					: type === 'gradient'
 						? function(/* value */) {
-							return Point.read(arguments, 0, 0, {
+							return Point.read(arguments, 0, {
 									readNull: name === 'highlight',
 									clone: true
 							});
@@ -757,12 +756,13 @@ var Color = Base.extend(new function() {
 		 * @return {Boolean} {@true if the colors are the same}
 		 */
 		equals: function(color) {
-			if (Base.isPlainValue(color))
-				color = Color.read(arguments);
-			return color === this || color && this._class === color._class
-					&& this._type === color._type
-					&& this._alpha === color._alpha
-					&& Base.equals(this._components, color._components)
+			var col = Base.isPlainValue(color)
+					? Color.read(arguments)
+					: color;
+			return col === this || col && this._class === col._class
+					&& this._type === col._type
+					&& this._alpha === col._alpha
+					&& Base.equals(this._components, col._components)
 					|| false;
 		},
 
@@ -1135,9 +1135,8 @@ var Color = Base.extend(new function() {
 
 	return Base.each(operators, function(operator, name) {
 		this[name] = function(color) {
-			color = Color.read(arguments, 0, 0);
+			color = Color.read(arguments);
 			var type = this._type,
-				properties = this._properties,
 				components1 = this._components,
 				components2 = color._convert(type);
 			for (var i = 0, l = components1.length; i < l; i++)

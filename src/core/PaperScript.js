@@ -14,7 +14,7 @@
  * @name PaperScript
  * @namespace
  */
-var PaperScript = Base.exports.PaperScript = (function() {
+Base.exports.PaperScript = (function() {
 	// Locally turn of exports and define for inlined acorn / esprima.
 	// Just declaring the local vars is enough, as they will be undefined.
 	var exports, define,
@@ -168,7 +168,15 @@ var PaperScript = Base.exports.PaperScript = (function() {
 				}
 			}
 			switch (node && node.type) {
-			case 'BinaryExpression':
+			case 'UnaryExpression': // -a
+				if (node.operator in unaryOperators
+						&& node.argument.type !== 'Literal') {
+					var arg = getCode(node.argument);
+					replaceCode(node, '$_("' + node.operator + '", '
+							+ arg + ')');
+				}
+				break;
+			case 'BinaryExpression': // a + b, a - b, a / b, a * b, a == b, ...				
 				if (node.operator in binaryOperators
 						&& node.left.type !== 'Literal') {
 					var left = getCode(node.left),
@@ -177,38 +185,37 @@ var PaperScript = Base.exports.PaperScript = (function() {
 							+ '", ' + right + ')');
 				}
 				break;
-			case 'AssignmentExpression':
-				if (/^.=$/.test(node.operator)
-						&& node.left.type !== 'Literal') {
-					var left = getCode(node.left),
-						right = getCode(node.right);
-					replaceCode(node, left + ' = _$_(' + left + ', "'
-							+ node.operator[0] + '", ' + right + ')');
-				}
-				break;
-			case 'UpdateExpression':
-				if (!node.prefix && !(parent && (
+			case 'UpdateExpression': // a++, a--
+			case 'AssignmentExpression': /// a += b, a -= b
+				if (!(parent && (
+						// Filter out for statements to allow loop increments
+						// to perform well
+						parent.type === 'ForStatement'
 						// We need to filter out parents that are comparison
 						// operators, e.g. for situations like if (++i < 1),
 						// as we can't replace that with if (_$_(i, "+", 1) < 1)
 						// Match any operator beginning with =, !, < and >.
-						parent.type === 'BinaryExpression'
+						|| parent.type === 'BinaryExpression'
 							&& /^[=!<>]/.test(parent.operator)
 						// array[i++] is a MemberExpression with computed = true
 						// We can't replace that with array[_$_(i, "+", 1)].
 						|| parent.type === 'MemberExpression'
 							&& parent.computed))) {
-					var arg = getCode(node.argument);
-					replaceCode(node, arg + ' = _$_(' + arg + ', "'
-							+ node.operator[0] + '", 1)');
-				}
-				break;
-			case 'UnaryExpression':
-				if (node.operator in unaryOperators
-						&& node.argument.type !== 'Literal') {
-					var arg = getCode(node.argument);
-					replaceCode(node, '$_("' + node.operator + '", '
-							+ arg + ')');
+					if (node.type === 'UpdateExpression') {
+						if (!node.prefix) {
+							var arg = getCode(node.argument);
+							replaceCode(node, arg + ' = _$_(' + arg + ', "'
+									+ node.operator[0] + '", 1)');
+						}
+					} else { // AssignmentExpression
+						if (/^.=$/.test(node.operator)
+								&& node.left.type !== 'Literal') {
+							var left = getCode(node.left),
+								right = getCode(node.right);
+							replaceCode(node, left + ' = _$_(' + left + ', "'
+									+ node.operator[0] + '", ' + right + ')');
+						}
+					}
 				}
 				break;
 			}
@@ -286,7 +293,8 @@ var PaperScript = Base.exports.PaperScript = (function() {
 		if (handlers)
 			code += '\nreturn { ' + handlers + ' };';
 /*#*/ if (__options.environment == 'browser') {
-		if (window.InstallTrigger || window.chrome) { // Firefox and Chrome
+		var firefox = window.InstallTrigger;
+		if (firefox || window.chrome) {
 			// On Firefox, all error numbers inside dynamically compiled code
 			// are relative to the line where the eval / compilation happened.
 			// To fix this issue, we're temporarily inserting a new script
@@ -295,15 +303,16 @@ var PaperScript = Base.exports.PaperScript = (function() {
 			// https://code.google.com/p/chromium/issues/detail?id=331655
 			var script = document.createElement('script'),
 				head = document.head;
-			// Do not add a new-line before the code on Chrome since the error
-			// messages are shifted by one line there...
-			if (!window.chrome)
+			// Add a new-line before the code on Firefox since the error
+			// messages appeawr to be aligned to line number 0...
+			if (firefox)
 				code = '\n' + code;
 			script.appendChild(document.createTextNode(
 				'paper._execute = function(' + params + ') {' + code + '\n}'
 			));
 			head.appendChild(script);
 			func = paper._execute;
+			delete paper._execute;
 			head.removeChild(script);
 		} else {
 			func = Function(params, code);

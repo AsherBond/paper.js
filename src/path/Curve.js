@@ -98,8 +98,7 @@ var Curve = Base.extend(/** @lends Curve# */{
 
 	_changed: function() {
 		// Clear cached values.
-		delete this._length;
-		delete this._bounds;
+		this._length = this._bounds = undefined;
 	},
 
 	/**
@@ -112,8 +111,8 @@ var Curve = Base.extend(/** @lends Curve# */{
 		return this._segment1._point;
 	},
 
-	setPoint1: function(point) {
-		point = Point.read(arguments);
+	setPoint1: function(/* point */) {
+		var point = Point.read(arguments);
 		this._segment1._point.set(point.x, point.y);
 	},
 
@@ -127,8 +126,8 @@ var Curve = Base.extend(/** @lends Curve# */{
 		return this._segment2._point;
 	},
 
-	setPoint2: function(point) {
-		point = Point.read(arguments);
+	setPoint2: function(/* point */) {
+		var point = Point.read(arguments);
 		this._segment2._point.set(point.x, point.y);
 	},
 
@@ -142,8 +141,8 @@ var Curve = Base.extend(/** @lends Curve# */{
 		return this._segment1._handleOut;
 	},
 
-	setHandle1: function(point) {
-		point = Point.read(arguments);
+	setHandle1: function(/* point */) {
+		var point = Point.read(arguments);
 		this._segment1._handleOut.set(point.x, point.y);
 	},
 
@@ -157,8 +156,8 @@ var Curve = Base.extend(/** @lends Curve# */{
 		return this._segment2._handleIn;
 	},
 
-	setHandle2: function(point) {
-		point = Point.read(arguments);
+	setHandle2: function(/* point */) {
+		var point = Point.read(arguments);
 		this._segment2._handleIn.set(point.x, point.y);
 	},
 
@@ -261,24 +260,16 @@ var Curve = Base.extend(/** @lends Curve# */{
 		return points;
 	},
 
-	// DOCS: document Curve#getLength(from, to)
 	/**
 	 * The approximated length of the curve in points.
 	 *
 	 * @type Number
 	 * @bean
 	 */
-	 // Hide parameters from Straps.js so it injects bean too
-	getLength: function(/* from, to */) {
-		var from = arguments[0],
-			to = arguments[1],
-			fullLength = arguments.length === 0 || from === 0 && to === 1;
-		if (fullLength && this._length != null)
-			return this._length;
-		var length = Curve.getLength(this.getValues(), from, to);
-		if (fullLength)
-			this._length = length;
-		return length;
+	getLength: function() {
+		if (this._length == null)
+			this._length = Curve.getLength(this.getValues(), 0, 1);
+		return this._length;
 	},
 
 	getArea: function() {
@@ -287,6 +278,11 @@ var Curve = Base.extend(/** @lends Curve# */{
 
 	getPart: function(from, to) {
 		return new Curve(Curve.getPart(this.getValues(), from, to));
+	},
+
+	// DOCS: document Curve#getPartLength(from, to)
+	getPartLength: function(from, to) {
+		return Curve.getLength(this.getValues(), from, to);
 	},
 
 	/**
@@ -924,8 +920,8 @@ statics: {
 	 * @param {Point} point the point on the curve.
 	 * @return {Number} the curve time parameter of the specified point.
 	 */
-	getParameterOf: function(point) {
-		point = Point.read(arguments);
+	getParameterOf: function(point) { // TODO: Fix argument assignment!
+		var point = Point.read(arguments);
 		return Curve.getParameterOf(this.getValues(), point.x, point.y);
 	},
 
@@ -950,17 +946,17 @@ statics: {
 	 * @param {Point} point the point on the curve.
 	 * @return {CurveLocation} the curve location of the specified point.
 	 */
-	getLocationOf: function(point) {
+	getLocationOf: function(point) { // TODO: Fix argument assignment!
 		// We need to use point to avoid minification issues and prevent method
 		// from turning into a bean (by removal of the point argument).
-		point = Point.read(arguments);
-		var t = this.getParameterOf(point);
+		var point = Point.read(arguments),
+			t = this.getParameterOf(point);
 		return t != null ? new CurveLocation(this, t) : null;
 	},
 
-	getNearestLocation: function(point) {
-		point = Point.read(arguments);
-		var values = this.getValues(),
+	getNearestLocation: function(point) { // TODO: Fix argument assignment!
+		var point = Point.read(arguments),
+			values = this.getValues(),
 			count = 100,
 			minDist = Infinity,
 			minT = 0;
@@ -994,7 +990,7 @@ statics: {
 	getNearestPoint: function(point) {
 		// We need to use point to avoid minification issues and prevent method
 		// from turning into a bean (by removal of the point argument).
-		point = Point.read(arguments);
+		var point = Point.read(arguments);
 		return this.getNearestLocation(point).getPoint();
 	}
 

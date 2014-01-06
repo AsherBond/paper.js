@@ -290,9 +290,9 @@ var View = Base.extend(Callback, /** @lends View# */{
 		return new LinkedSize(size.width, size.height, this, 'setViewSize');
 	},
 
-	setViewSize: function(size) {
-		size = Size.read(arguments);
-		var delta = size.subtract(this._viewSize);
+	setViewSize: function(/* size */) {
+		var size = Size.read(arguments),
+			delta = size.subtract(this._viewSize);
 		if (delta.isZero())
 			return;
 		this._viewSize.set(size.width, size.height);
@@ -334,8 +334,8 @@ var View = Base.extend(Callback, /** @lends View# */{
 	 * @type Size
 	 * @bean
 	 */
-	getSize: function(/* dontLink */) {
-		return this.getBounds().getSize(arguments[0]);
+	getSize: function() {
+		return this.getBounds().getSize();
 	},
 
 	/**
@@ -344,8 +344,8 @@ var View = Base.extend(Callback, /** @lends View# */{
 	 * @type Point
 	 * @bean
 	 */
-	getCenter: function(/* dontLink */) {
-		return this.getBounds().getCenter(arguments[0]);
+	getCenter: function() {
+		return this.getBounds().getCenter();
 	},
 
 	setCenter: function(center) {

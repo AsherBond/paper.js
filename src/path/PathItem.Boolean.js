@@ -194,7 +194,7 @@ PathItem.inject(new function() {
 				path.remove();
 			}
 		}
-		// Delete the proxies
+		// Remove the proxies
 		path1.remove();
 		path2.remove();
 		// And then, we are done.

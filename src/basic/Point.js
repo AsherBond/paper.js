@@ -199,10 +199,11 @@ var Point = Base.extend(/** @lends Point# */{
 	 * console.log(point != new Point(1, 1)); // true
 	 */
 	equals: function(point) {
-		return point === this || point && (this.x === point.x
-				&& this.y === point.y
-				|| Array.isArray(point) && this.x === point[0]
-					&& this.y === point[1]) || false;
+		return this === point || point
+				&& (this.x === point.x && this.y === point.y
+					|| Array.isArray(point)
+						&& this.x === point[0] && this.y === point[1])
+				|| false;
 	},
 
 	/**
@@ -515,7 +516,8 @@ var Point = Base.extend(/** @lends Point# */{
 			scale = current !== 0 ? length / current : 0,
 			point = new Point(this.x * scale, this.y * scale);
 		// Preserve angle.
-		point._angle = this._angle;
+		if (scale >= 0)
+			point._angle = this._angle;
 		return point;
 	},
 

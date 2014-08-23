@@ -20,9 +20,10 @@ var __options = {
 	environment: 'browser',
 	stats: true,
 	svg: true,
-	fatline: true,
-	paperscript: true,
+	fatlineClipping: true,
+	booleanOperations: true,
+	nativeContains: false,
+	paperScript: true,
 	palette: true,
-	nativeContains: true,
 	debug: false
 };

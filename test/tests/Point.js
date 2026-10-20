@@ -42,6 +42,11 @@ test('new Point({ angle: 45, length: 20})', function() {
     equals(new Point({ angle: 40, length: 20 }), new Point(15.32089, 12.85575));
 });
 
+test('new Point({ angleInRadians: 1, length: 20 })', function() {
+    equals(new Point({ angleInRadians: 1, length: 20 }),
+            new Point(20 * Math.cos(1), 20 * Math.sin(1)));
+});
+
 test('new Point("10, 20")', function() {
     equals(new Point('10, 20'), new Point(10, 20));
     equals(new Point('10,20'), new Point(10, 20));
@@ -136,6 +141,15 @@ test('equals()', function() {
     equals(function() {
         return new Point(0, 0).equals(null);
     }, false);
+});
+
+test('clamp(min, max)', function() {
+    var min = new Point(0, 10),
+        max = new Point(100, 50);
+    equals(new Point(-5, 60).clamp(min, max), new Point(0, 50));
+    equals(new Point(150, 0).clamp(min, max), new Point(100, 10));
+    equals(new Point(20, 30).clamp(min, max), new Point(20, 30));
+    equals(new Point(-5, 60).clamp([0, 10], [100, 50]), new Point(0, 50));
 });
 
 test('isCollinear()', function() {

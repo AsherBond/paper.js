@@ -74,6 +74,18 @@ test('Create a raster from a canvas', function() {
     equals(raster.size, new Size(30, 20), true);
 });
 
+if (isNodeContext) {
+    test('Create an SVG canvas', function() {
+        var canvas = paper.createCanvas(30, 20, 'svg');
+        equals(function() {
+            return canvas.type;
+        }, 'svg');
+        equals(function() {
+            return /viewBox="0 0 30 20"/.test(canvas.toBuffer().toString());
+        }, true);
+    });
+}
+
 test('Create a raster from a dom id', function(assert) {
     var done = assert.async();
     var img = document.createElement('img');
@@ -239,4 +251,80 @@ test('new Raster(size[, position])', function() {
     var raster = new Raster({width:100, height:100, position:new Point(100, 100)});
     equals(raster.position, new Point(100, 100));
     equals(raster.bounds, new Rectangle(50, 50, 100, 100));
+});
+
+test('new Raster(source, position)', function() {
+    var raster = new Raster(new Size(30, 20), new Point(5, 6));
+    equals(raster.position, new Point(5, 6));
+    var raster = new Raster('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', [30, 40]);
+    equals(raster.position, new Point(30, 40));
+});
+
+test('Raster#clipMask (#1845)', function() {
+    // Rasters clip with their rectangle without drawing their image, also after
+    // other paths were drawn before them:
+    function createClipped(clipItem) {
+        clipItem.clipMask = true;
+        return new Group([
+            new Path.Circle({
+                center: [100, 100],
+                radius: 50,
+                fillColor: 'blue'
+            }),
+            new Group([clipItem, new Path.Rectangle({
+                point: [0, 0],
+                size: [200, 200],
+                fillColor: 'red'
+            })])
+        ]);
+    }
+
+    function createRaster() {
+        var raster = new Raster({ size: [50, 50], position: [50, 50] }),
+            ctx = raster.getContext(true);
+        ctx.fillStyle = 'green';
+        ctx.fillRect(0, 0, 50, 50);
+        return raster;
+    }
+
+    function createRectangle() {
+        return new Path.Rectangle([25, 25], [50, 50]);
+    }
+
+    function createCircle() {
+        return new Path.Circle({ center: [150, 150], radius: 20 });
+    }
+
+    comparePixels(createClipped(createRaster()),
+            createClipped(createRectangle()));
+    // Also together with other items in a group used as clip mask:
+    comparePixels(createClipped(new Group([createRaster(), createCircle()])),
+            createClipped(new Group([createRectangle(), createCircle()])));
+});
+
+test('Raster#exportJSON() and #importJSON() keep the size (#1598)', function(assert) {
+    var done = assert.async();
+    var raster = new Raster({ size: [20, 10] });
+    var json = raster.exportJSON();
+    raster.remove();
+    // The size comes before the source, so older versions apply it first:
+    equals(/"size":\[20,10\],"source":/.test(json), true, 'exported');
+    var imported = project.activeLayer.importJSON(json);
+    equals(imported.size, new Size(20, 10), 'before the image has loaded');
+    equals(imported.bounds.width, 20, 'bounds before the image has loaded');
+    imported.onLoad = function() {
+        equals(imported.size, new Size(20, 10), 'after the image has loaded');
+        done();
+    };
+});
+
+test('Raster#importJSON() without a size, as in older saves (#1598)', function(assert) {
+    var done = assert.async();
+    var source = new Raster({ size: [20, 10], insert: false }).source;
+    var imported = project.activeLayer.importJSON(
+            JSON.stringify(['Raster', { source: source }]));
+    imported.onLoad = function() {
+        equals(imported.size, new Size(20, 10), 'after the image has loaded');
+        done();
+    };
 });

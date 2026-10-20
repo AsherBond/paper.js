@@ -11,6 +11,7 @@
  */
 
 /*#*/ include('Point.js');
+/*#*/ include('Line.js');
 /*#*/ include('Size.js');
 /*#*/ include('Rectangle.js');
 /*#*/ include('Matrix.js');
@@ -58,10 +59,20 @@
 
 /*#*/ include('JSON.js');
 
+// Hosted items only exist in paper-hosted.js and when loading the sources
+// directly, so skip their tests in the other builds:
+if (typeof HostItem !== 'undefined') {
+    /*#*/ include('Hosted.js');
+}
+
 /*#*/ include('SvgImport.js');
 /*#*/ include('SvgExport.js');
 
 /*#*/ include('Numerical.js');
+
+/*#*/ include('Tween.js');
+
+/*#*/ include('View.js');
 
 /*#*/ include('PaperScript.js');
 

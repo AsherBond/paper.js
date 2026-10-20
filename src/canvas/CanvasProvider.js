@@ -10,13 +10,12 @@
  * All rights reserved.
  */
 
-// TODO: Run through the canvas array to find a canvas with the requested
-// width / height, so we don't need to resize it?
 var CanvasProvider = Base.exports.CanvasProvider = {
     canvases: [],
 
     getCanvas: function(width, height, options) {
-        if (!window)
+        // Web-workers have no DOM, but may support OffscreenCanvas:
+        if (!window && !self.OffscreenCanvas)
             return null;
         var canvas,
             clear = true;
@@ -27,8 +26,10 @@ var CanvasProvider = Base.exports.CanvasProvider = {
         if (this.canvases.length) {
             canvas = this.canvases.pop();
         } else {
-            canvas = document.createElement('canvas');
-            clear = false; // It's already cleared through createElement().
+            canvas = window
+                    ? document.createElement('canvas')
+                    : new self.OffscreenCanvas(width, height);
+            clear = false; // It's already cleared when created.
         }
         var ctx = canvas.getContext('2d', options || {});
         if (!ctx) {
@@ -59,9 +60,12 @@ var CanvasProvider = Base.exports.CanvasProvider = {
     release: function(obj) {
         var canvas = obj && obj.canvas ? obj.canvas : obj;
         if (canvas && canvas.getContext) {
-            // We restore contexts on release(), see getCanvas()
-            canvas.getContext('2d').restore();
-            this.canvases.push(canvas);
+            // Resizing frees the pixels right away, and also resets the
+            // context with the state that getCanvas() saved. Keep only a few
+            // canvases, to reuse their elements and contexts:
+            canvas.width = canvas.height = 0;
+            if (this.canvases.length < 8)
+                this.canvases.push(canvas);
         }
     }
 };

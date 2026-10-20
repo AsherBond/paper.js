@@ -40,6 +40,18 @@ test('Curve#classify()', function() {
     testClassify(single, { type: 'serpentine', roots: [ 0.870967741935484 ] });
     testClassify(double, { type: 'serpentine', roots: [ 0.15047207654837885, 0.7384168123405099 ] });
     testClassify(arch, { type: 'arch', roots: null });
+    // A root at the very end is the end itself, not a point of inflection
+    // inside the curve (#1879):
+    var end = new Curve([1133.875, 47.56], [0.001, 1.2], [0, -1.2],
+            [1133.876, 51.16]);
+    testClassify(end, { type: 'arch', roots: null });
+    // A straight curve with handles along it is a line, also when rounding
+    // keeps its coefficients from being exactly zero, and has no loop:
+    var straight = new Curve([256.099999999999, 157.4], [-0.12, 0],
+            [0.12666666666666, 0], [255.729999999999, 157.4]);
+    testClassify(straight, { type: 'line', roots: null });
+    equals(straight.getIntersections(), [],
+            'straight.getIntersections()');
 });
 
 test('Curve#getPointAtTime()', function() {
@@ -327,6 +339,27 @@ test('Curve#getTimeOf()', function() {
     }
 });
 
+test('Curve#getTimeOf() near the ends of a straight curve', function() {
+    // Without handles, a point at a distance d from an end solves to a time of
+    // about sqrt(d / 3l) on a curve of length l, far from the end (#2082):
+    var curve = new Curve(new Point(100, 100), new Point(200, 200));
+    equals(curve.getTimeOf(new Point(100 + 1e-9, 100)), 0, null,
+            { tolerance: 0 });
+    equals(curve.getTimeOf(new Point(200 - 1e-9, 200)), 1, null,
+            { tolerance: 0 });
+});
+
+test('Curve#getTimeOf() at large coordinates', function() {
+    // Beyond about 2e8, GEOMETRIC_EPSILON is below the resolution of the
+    // coordinates, and points on the curve weren't recognized as such:
+    var curve = new Curve(new Point(288270130.78085, 2621133556.75646),
+            new Point(2158145287.70088, 988602383.71608));
+    for (var i = 1; i < 10; i++) {
+        var time = i / 10 + 0.01;
+        equals(curve.getTimeOf(curve.getPointAtTime(time)), time);
+    }
+});
+
 test('Curve#getPartLength() with straight curve', function() {
     var curve = new Curve([0, 0, 0, 0, 64, 0, 64, 0]);
     equals(function() { return curve.getPartLength(0.0, 0.25); }, 10);
@@ -368,4 +401,50 @@ test('Curve#getTimesWithTangent()', function() {
         2,
         'should return 2 values for specific parabollic path case'
     );
+});
+
+test('Curve#getTimesWithTangent() with quadratic curve', function() {
+    // The quadratic curve (0, 0), (50, 100), (100, 0) elevated to a cubic. Its
+    // derivative 2 * (50, 100 - 200 * t) is parallel to (1, -1) at t = 0.75,
+    // to (1, 1) at t = 0.25, to (1, 0) at t = 0.5, and never to (0, 1):
+    var curve = new Curve([0, 0], [100 / 3, 200 / 3], [-100 / 3, 200 / 3],
+            [100, 0]);
+    equals(curve.getTimesWithTangent([1, -1]), [0.75]);
+    equals(curve.getTimesWithTangent([1, 1]), [0.25]);
+    equals(curve.getTimesWithTangent([1, 0]), [0.5]);
+    equals(curve.getTimesWithTangent([0, 1]), []);
+
+    // #1870: A cubic converted from an imported quadratic curve:
+    var path = new Path();
+    path.moveTo(726.0867795506349, 286.15825464018235);
+    path.cubicCurveTo(
+            [742.7491045262132, 272.26375773363725],
+            [751.0802670140022, 254.7434060566591],
+            [751.0802670140022, 233.59719960924784]);
+    var angle = 122 / 180 * Math.PI,
+        tangent = new Point(Math.cos(angle), Math.sin(angle)),
+        times = path.firstCurve.getTimesWithTangent(tangent);
+    equals(times.length, 1, 'times.length');
+    equals(path.firstCurve.getTangentAtTime(times[0]).cross(tangent), 0,
+            'tangent at times[0] is parallel to the given tangent');
+});
+
+test('Curve#handleBounds', function() {
+    // The handle bounds are the bounds of the curve's four points:
+    // (0, 0), (-20, 80), (130, 10), (100, 50)
+    var expected = new Rectangle(-20, 0, 150, 80);
+    var curve = new Curve([0, 0], [-20, 80], [30, -40], [100, 50]);
+    equals(curve.handleBounds, expected, 'curve.handleBounds');
+    // The outer handles of the segments are not part of the curve, and
+    // neither is the stroke:
+    var path = new Path({
+        segments: [
+            [[0, 0], [-50, -50], [-20, 80]],
+            [[100, 50], [30, -40], [40, 40]]
+        ],
+        strokeColor: 'black',
+        strokeWidth: 10
+    });
+    equals(path.firstCurve.handleBounds, expected,
+            'path.firstCurve.handleBounds');
 });

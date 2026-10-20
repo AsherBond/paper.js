@@ -19,6 +19,7 @@ var Key = new function() {
             // Unify different key identifier naming schemes, e.g. on Gecko, IE:
             '\t': 'tab',
             ' ': 'space',
+            '\xA0': 'space', // Option + Space on macOS = non-breaking space.
             '\b': 'backspace',
             '\x7f': 'delete',
             'Spacebar': 'space',
@@ -89,10 +90,21 @@ var Key = new function() {
                 (key.length > 1 ? Base.hyphenate(key) : key.toLowerCase());
     }
 
-    function handleKey(down, key, character, event) {
-        var type = down ? 'keydown' : 'keyup',
-            view = View._focused,
-            name;
+    // View#dispatchKeyEvent() passes its view. For the DOM's key events, the
+    // focused view may have been hidden since the last mouse event, while
+    // another one became visible (#1953), and only visible views get them:
+    function handleKey(down, key, character, event, view) {
+        if (!view) {
+            View.updateFocus();
+            view = View._focused;
+            if (view && !view.isVisible())
+                view = null;
+        }
+        // View#dispatchKeyEvent() can leave out the character, which keyup
+        // takes from keydown, as the DOM's keyup events do below:
+        if (character == null)
+            character = down ? key.length > 1 ? '' : key : charMap[key] || '';
+        var name;
         keyMap[key] = down;
         // Link the key from keydown with the character form keypress, so keyup
         // can retrieve the character again.
@@ -119,7 +131,7 @@ var Key = new function() {
                     for (var k in metaFixMap) {
                         // Make sure it wasn't released already in the meantime:
                         if (k in charMap)
-                            handleKey(false, k, metaFixMap[k], event);
+                            handleKey(false, k, metaFixMap[k], event, view);
                     }
                     metaFixMap = null;
                 }
@@ -136,15 +148,12 @@ var Key = new function() {
 
     DomEvent.add(document, {
         keydown: function(event) {
-            var key = getKey(event),
-                agent = paper && paper.agent;
+            var key = getKey(event);
             // Directly handle any special keys (key.length > 1) in keydown, as
-            // not all of them will receive keypress events.
-            // Chrome doesn't fire keypress events for command and alt keys,
-            // so we need to handle this in a way that works across all OSes.
-            if (key.length > 1 || agent && (agent.chrome && (event.altKey
-                        || agent.mac && event.metaKey
-                        || !agent.mac && event.ctrlKey))) {
+            // not all of them will receive keypress events. Neither do keys
+            // pressed with control, alt or meta in modern browsers.
+            if (key.length > 1 || event.ctrlKey || event.altKey
+                    || event.metaKey) {
                 handleKey(true, key,
                         charLookup[key] || (key.length > 1 ? '' : key), event);
             } else {
@@ -190,6 +199,8 @@ var Key = new function() {
     });
 
     return /** @lends Key */{
+        _handleKey: handleKey,
+
         /**
          * The current state of the keyboard modifiers.
          *

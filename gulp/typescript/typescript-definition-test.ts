@@ -54,6 +54,10 @@ let paperScope       = {} as paper.PaperScope;
 let callback         = {} as () => {};
 let hitResult        = {} as paper.HitResult;
 let object           = {} as object;
+let name             = '';
+
+// Only returns `true` for types that include `null`, to test nullable returns:
+declare function isNullable<T>(value: T): null extends T ? true : false;
 
 
 //
@@ -108,14 +112,17 @@ point.floor();
 point.abs();
 point.add(0);
 point.add(pointLike);
+point.add(0, 0);
 point.subtract(0);
 point.subtract(pointLike);
 point.multiply(0);
 point.multiply(pointLike);
+point.multiply(0, 0);
 point.divide(0);
 point.divide(pointLike);
 point.modulo(0);
 point.modulo(pointLike);
+point.negate();
 paper.Point.min(pointLike, pointLike);
 paper.Point.max(pointLike, pointLike);
 paper.Point.random();
@@ -153,10 +160,12 @@ size.subtract(0);
 size.subtract(sizeLike);
 size.multiply(0);
 size.multiply(sizeLike);
+size.multiply(0, 0);
 size.divide(0);
 size.divide(sizeLike);
 size.modulo(0);
 size.modulo(sizeLike);
+size.negate();
 paper.Size.min(sizeLike, sizeLike);
 paper.Size.max(sizeLike, sizeLike);
 paper.Size.random();
@@ -309,9 +318,12 @@ project.exportJSON({});
 project.importJSON('');
 project.exportSVG();
 project.exportSVG({});
+project.exportSVG({ reuseImages: true });
+project.exportSVG({ idPrefix: '' });
 project.importSVG('');
 project.importSVG({} as SVGElement);
 project.importSVG('', {});
+project.importSVG('', { crossOrigin: 'anonymous' });
 project.importSVG('', callback);
 
 
@@ -329,6 +341,8 @@ item.blendMode;
 item.opacity;
 item.selected;
 item.clipMask;
+item.guide;
+item.guide = true;
 item.data;
 item.position;
 item.pivot;
@@ -386,7 +400,13 @@ item.contains(pointLike);
 item.isInside(rectangleLike);
 item.intersects(item);
 item.hitTest(pointLike);
+paper.Item.getBounds([item], { stroke: true });
 item.hitTest(pointLike, {});
+// Options objects are typed from the @option tags (#1666):
+item.hitTest(pointLike, { tolerance: 5, fill: true, class: paper.Path });
+item.hitTestAll(pointLike, { tolerance: 5, fill: true });
+item.rasterize({ resolution: 144, insert: false });
+item.exportSVG({ asString: true, precision: 2 });
 item.hitTestAll(pointLike);
 item.hitTestAll(pointLike, {});
 item.matches({});
@@ -401,9 +421,12 @@ item.exportJSON({});
 item.importJSON('');
 item.exportSVG();
 item.exportSVG({});
+item.exportSVG({ reuseImages: true });
+item.exportSVG({ idPrefix: '' });
 item.importSVG('');
 item.importSVG({} as SVGElement);
 item.importSVG('', {});
+item.importSVG('', { crossOrigin: 'anonymous' });
 item.importSVG('', callback);
 item.addChild(item);
 item.insertChild(0, item);
@@ -415,6 +438,7 @@ item.sendToBack();
 item.bringToFront();
 item.addTo(group);
 item.copyTo(group);
+item.reduce();
 item.reduce({});
 item.remove();
 item.replaceWith(item);
@@ -437,6 +461,19 @@ item.isAncestor(item);
 item.isSibling(item);
 item.isGroupedWith(item);
 item.translate(pointLike);
+item.translate(0, 0);
+// Setters read their values as parameters do (#1665):
+item.position = [0, 0];
+item.bounds = { x: 0, y: 0, width: 10, height: 10 };
+item.fillColor = 'red';
+item.fillColor = { hue: 90, saturation: 1, brightness: 1 };
+item.fillColor = null;
+item.strokeColor = [1, 0, 0];
+item.fillColor = {
+    gradient: { stops: ['red', ['blue', 0.5]], radial: true },
+    origin: [0, 0],
+    destination: [10, 10]
+};
 item.rotate(0);
 item.rotate(0, pointLike);
 item.scale(0);
@@ -458,6 +495,7 @@ item.parentToLocal(pointLike);
 item.localToParent(pointLike);
 item.fitBounds(rectangleLike);
 item.fitBounds(rectangleLike, true);
+item.fitBounds(rectangleLike, 'cover');
 item.on('', callback);
 item.on({});
 item.off('', callback);
@@ -469,6 +507,7 @@ item.removeOnMove();
 item.removeOnDown();
 item.removeOnDrag();
 item.removeOnUp();
+item.tween(object, { easing: 'easeInOutSine' });
 
 
 //
@@ -487,6 +526,7 @@ layer.activate();
 new paper.Group([ item ]);
 new paper.Group({});
 group.clipped;
+group.fullySelected = true;
 
 
 //
@@ -527,6 +567,7 @@ raster.image;
 raster.canvas;
 raster.context;
 raster.source;
+let rasterSource: string = raster.source;
 raster.crossOrigin;
 raster.smoothing;
 raster.onLoad;
@@ -536,6 +577,7 @@ raster.onError;
 raster.getSubCanvas(rectangleLike);
 raster.getSubRaster(rectangleLike);
 raster.toDataURL();
+raster.toDataURL('image/jpeg', 0.8);
 raster.drawImage({} as HTMLImageElement, pointLike);
 raster.getAverageColor(path);
 raster.getAverageColor(rectangleLike);
@@ -545,6 +587,7 @@ raster.getPixel(pointLike);
 raster.setPixel(0, 0, color);
 raster.setPixel(pointLike, color);
 raster.createImageData(sizeLike);
+raster.getImageData();
 raster.getImageData(rectangleLike);
 raster.putImageData({} as ImageData, pointLike);
 raster.setImageData({} as ImageData);
@@ -583,6 +626,7 @@ pathItem.divide(path, {});
 pathItem.reorient();
 pathItem.reorient(true);
 pathItem.reorient(true, true);
+pathItem.getIntersections();
 pathItem.getIntersections(path);
 pathItem.getIntersections(path, callback);
 pathItem.getCrossings(path);
@@ -673,12 +717,16 @@ path.divideAt(curveLocation);
 path.splitAt(curveLocation);
 path.join(path);
 path.join(path, 0);
+path.reduce();
 path.reduce(object);
+path.reduce({ simplify: true });
 path.toShape();
 path.toShape(true);
 path.getLocationOf(pointLike);
 path.getOffsetOf(pointLike);
 path.getLocationAt(0);
+let isNullablePathLocationOf: true = isNullable(path.getLocationOf(pointLike));
+let isNullablePathOffsetOf: true = isNullable(path.getOffsetOf(pointLike));
 path.getPointAt(0);
 path.getTangentAt(0);
 path.getNormalAt(0);
@@ -800,6 +848,9 @@ curve.getOffsetAtTime(0);
 curve.getLocationOf(pointLike);
 curve.getOffsetOf(pointLike);
 curve.getTimeOf(pointLike);
+let isNullableCurveLocationOf: true = isNullable(curve.getLocationOf(pointLike));
+let isNullableCurveOffsetOf: true = isNullable(curve.getOffsetOf(pointLike));
+let isNullableCurveTimeOf: true = isNullable(curve.getTimeOf(pointLike));
 curve.getNearestLocation(pointLike);
 curve.getNearestPoint(pointLike);
 curve.getPointAt(curveLocation);
@@ -891,6 +942,7 @@ style.fontFamily;
 style.fontWeight;
 style.fontSize;
 style.leading;
+style.tracking;
 style.justification;
 
 
@@ -976,6 +1028,7 @@ textItem.fontFamily;
 textItem.fontWeight;
 textItem.fontSize;
 textItem.leading;
+textItem.tracking;
 textItem.justification;
 
 
@@ -994,6 +1047,7 @@ pointText.point;
 
 view.autoUpdate;
 view.element;
+view.project;
 view.pixelRatio;
 view.resolution;
 view.viewSize;
@@ -1014,8 +1068,11 @@ view.onDoubleClick;
 view.onMouseMove;
 view.onMouseEnter;
 view.onMouseLeave;
+view.onKeyDown;
+view.onKeyUp;
 view.remove();
 view.update();
+view.update(true);
 view.requestUpdate();
 view.play();
 view.pause();
@@ -1037,6 +1094,8 @@ view.skew(pointLike, pointLike);
 view.skew(0, 0);
 view.skew(0, 0, pointLike);
 view.transform(matrix);
+view.fitBounds(rectangleLike);
+view.fitBounds(rectangleLike, 'cover');
 view.projectToView(pointLike);
 view.viewToProject(pointLike);
 view.getEventPoint(event);
@@ -1052,6 +1111,7 @@ view.responds('');
 // Event
 //
 
+event.time;
 event.timeStamp;
 event.modifiers;
 event.modifiers.shift;
@@ -1100,11 +1160,14 @@ tool.responds('');
 //
 
 toolEvent.type;
+toolEvent.tool;
 toolEvent.point;
 toolEvent.lastPoint;
 toolEvent.downPoint;
 toolEvent.middlePoint;
 toolEvent.delta;
+toolEvent.velocity;
+toolEvent.elapsed;
 toolEvent.count;
 toolEvent.item;
 toolEvent.toString();
@@ -1147,7 +1210,10 @@ paperScope.install(object);
 paperScope.setup('');
 paperScope.setup({} as HTMLCanvasElement);
 paperScope.setup(sizeLike);
+paperScope.createCanvas(0, 0);
 paperScope.activate();
+paperScope.clear();
+paperScope.remove();
 paper.PaperScope.get(0);
 new paperScope.Color('');
 new paperScope.CompoundPath('');

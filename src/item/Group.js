@@ -24,8 +24,10 @@ var Group = Item.extend(/** @lends Group# */{
     _selectBounds: false,
     _selectChildren: true,
     _serializeFields: {
+        isolated: false,
         children: []
     },
+    _isolated: false,
 
     // DOCS: document new Group(item, item...);
     /**
@@ -168,6 +170,27 @@ var Group = Item.extend(/** @lends Group# */{
             child.setClipMask(clipped);
     },
 
+    /**
+     * Specifies whether the group is isolated, drawn through a temporary
+     * canvas, so that the blend modes of its children only apply within it,
+     * like CSS's `isolation: isolate`. Without it, a compositing mode such as
+     * `'destination-out'` affects everything drawn below the group, also in
+     * other layers. Groups with an {@link Item#opacity} below 1 or a
+     * {@link Item#blendMode} are isolated anyway.
+     *
+     * @bean
+     * @type Boolean
+     * @default false
+     */
+    isIsolated: function() {
+        return this._isolated;
+    },
+
+    setIsolated: function(isolated) {
+        this._isolated = !!isolated;
+        this._changed(/*#=*/Change.ATTRIBUTE);
+    },
+
     _getBounds: function _getBounds(matrix, options) {
         var clipItem = this._getClipItem();
         return clipItem
@@ -184,13 +207,29 @@ var Group = Item.extend(/** @lends Group# */{
                     clipItem);
     },
 
+    _hitTestSelf: function(point, options, viewMatrix) {
+        // A group is hit wherever one of its children is hit, as in
+        // Illustrator. Without filters or the collecting of all hits, the
+        // children were already tested without result:
+        if (options.match || options.class || options.type || options.all) {
+            var res = this._hitTestChildren(point, options.extend({
+                all: null, match: null, class: null, type: null
+            }), viewMatrix);
+            if (res)
+                res.item = this;
+            return res;
+        }
+    },
+
     _draw: function(ctx, param) {
         var clip = param.clip,
-            clipItem = !clip && this._getClipItem();
-        param = param.extend({ clipItem: clipItem, clip: false });
+            clipItem = this._getClipItem();
+        param = param.extend({ clipItem: !clip && clipItem, clip: false });
         if (clip) {
             // If told to clip with a group, we start our own path and draw each
-            // child just like in a compound-path.
+            // child just like in a compound-path. A single path can only add
+            // up shapes, so a nested clip item can't intersect them. Leave it
+            // out, which clips with all of the clipped content (#1618):
             ctx.beginPath();
             param.dontStart = param.dontFinish = true;
         } else if (clipItem) {

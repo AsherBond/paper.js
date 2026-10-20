@@ -52,7 +52,9 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
             applyMatrix: true,
             insertItems: true,
             handleSize: 4,
-            hitTolerance: 0
+            segmentSize: null,
+            hitTolerance: 0,
+            scaleStrokes: false
         });
         this.project = null;
         this.projects = [];
@@ -130,8 +132,17 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
      *     (Note that not all items can set this to `false`)
      * @option [settings.handleSize=4] {Number} the size of the curve handles
      *     when drawing selections
+     * @option [settings.segmentSize=null] {Number} the size of the segments
+     *     when drawing selections, or `null` to use `settings.handleSize`, e.g.
+     *     with `handleSize: 0` to only draw the segments and not their handles
      * @option [settings.hitTolerance=0] {Number} the default tolerance for hit-
-     *     tests, when no value is specified
+     *     tests, when no value is specified, and for the mouse events of items
+     * @option [settings.scaleStrokes=false] {Boolean} controls whether applying
+     *     a matrix to the content of paths and compound paths also scales their
+     *     {@link Style#strokeWidth}, by the geometric mean of the scale factors
+     *     for non-uniform scaling. Items that keep their matrix, with
+     *     {@link Item#applyMatrix} set to `false`, scale their strokes when
+     *     drawing anyway, unless {@link Style#strokeScaling} is `false`
      */
 
     /**
@@ -206,7 +217,9 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
     execute: function(code, options) {
 /*#*/   if (__options.paperScript) {
             var exports = paper.PaperScript.execute(code, this, options);
-            View.updateFocus();
+            // Focus handling only exists in the browser, not in web workers:
+            if (window)
+                View.updateFocus();
             return exports;
 /*#*/   }
     },
@@ -237,13 +250,15 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
                 }
             });
         });
-        // Copy over all fields from this scope to the destination.
-        // Do not use Base.each, since we also want to enumerate over
-        // fields on PaperScope.prototype, e.g. all classes
-        for (var key in this)
-            // Exclude all 'hidden' fields
-            if (!/^_/.test(key) && this[key])
+        // Copy over all fields from this scope to the destination, except the
+        // hidden ones and the names that the destination has already, such as
+        // the native Event, MouseEvent and Symbol (#1832). Do not use
+        // Base.each, since we also want to enumerate over fields on
+        // PaperScope.prototype, e.g. all classes:
+        for (var key in this) {
+            if (!/^_/.test(key) && this[key] && !(key in scope))
                 scope[key] = this[key];
+        }
     },
 
     /**
@@ -265,6 +280,14 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
         return this;
     },
 
+    /**
+     * Creates a canvas of the given size, or reuses one that was released
+     * internally.
+     *
+     * @param {Number} width the width of the canvas
+     * @param {Number} height the height of the canvas
+     * @return {HTMLCanvasElement} the canvas
+     */
     createCanvas: function(width, height) {
         return CanvasProvider.getCanvas(width, height);
     },
@@ -277,9 +300,11 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
         paper = this;
     },
 
+    /**
+     * Removes all projects, views and tools of this scope, along with their
+     * installed event handlers.
+     */
     clear: function() {
-        // Remove all projects, views and tools.
-        // This also removes the installed event handlers.
         var projects = this.projects,
             tools = this.tools;
         for (var i = projects.length - 1; i >= 0; i--)
@@ -288,6 +313,9 @@ var PaperScope = Base.extend(/** @lends PaperScope# */{
             tools[i].remove();
     },
 
+    /**
+     * Clears this scope and removes it from the list of scopes.
+     */
     remove: function() {
         this.clear();
         delete PaperScope._scopes[this._id];

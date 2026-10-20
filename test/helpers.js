@@ -13,7 +13,6 @@
 // We call our variable `isNodeContext` because resemble.js exposes a global
 // `isNode` function which would override it and break node check.
 var isNodeContext = typeof global === 'object',
-    isPhantomContext = typeof window === 'object' && !!window.callPhantom,
     scope;
 
 if (isNodeContext) {
@@ -334,7 +333,8 @@ var compareItem = function(actual, expected, message, options, properties) {
                 'strokeColor', 'strokeCap', 'strokeJoin', 'dashArray',
                 'dashOffset', 'miterLimit'];
         if (expected instanceof TextItem)
-            styles.push('fontSize', 'font', 'leading', 'justification');
+            styles.push('fontSize', 'font', 'leading', 'tracking',
+                    'justification');
         compareProperties(actual.style, expected.style, styles,
                 message + ' (#style)', options);
     }
@@ -636,7 +636,7 @@ var MouseEventPolyfill = function(type, params) {
 
 MouseEventPolyfill.prototype = nativeClasses.Event.prototype;
 
-var triggerMouseEvent = function(type, point, target) {
+var triggerMouseEvent = function(type, point, target, flags) {
     // Depending on event type, events have to be triggered on different
     // elements due to the event handling implementation (see `viewEvents`
     // and `docEvents` in View.js). And we cannot rely on the fact that event
@@ -651,7 +651,7 @@ var triggerMouseEvent = function(type, point, target) {
     var MouseEvent = typeof nativeClasses.MouseEvent === 'function'
         ? nativeClasses.MouseEvent
         : MouseEventPolyfill;
-    var event = new MouseEvent(type, {
+    var event = new MouseEvent(type, Base.set({
         bubbles: true,
         cancelable: true,
         composed: true,
@@ -659,6 +659,17 @@ var triggerMouseEvent = function(type, point, target) {
         clientY: point.y,
         screenX: point.x,
         screenY: point.y
-    });
+    }, flags));
     target.dispatchEvent(event);
+    return event;
+};
+
+var triggerKeyEvent = function(type, key, modifiers) {
+    var event = new KeyboardEvent(type, Base.set({
+        bubbles: true,
+        cancelable: true,
+        key: key,
+        charCode: type === 'keypress' ? key.charCodeAt(0) : 0
+    }, modifiers));
+    document.dispatchEvent(event);
 };

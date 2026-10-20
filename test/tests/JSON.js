@@ -257,9 +257,69 @@ test('Path#importJSON()', function() {
     equals(function() { return path.parent === layer; }, true);
 });
 
+test('Shape#importJSON() with type after radius (#1820)', function() {
+    var circle = new Shape.Circle({
+        center: [50, 50],
+        radius: 25,
+        fillColor: 'red'
+    });
+    var imported = new Shape().importJSON(
+            '["Shape",{"applyMatrix":false,"matrix":[1,0,0,1,50,50],' +
+            '"radius":25,"size":[50,50],"type":"circle","fillColor":[1,0,0]}]');
+    equals(imported, circle);
+    equals(imported.radius, 25, 'imported.radius');
+    equals(imported.bounds, new Rectangle(25, 25, 50, 50), 'imported.bounds');
+
+    var ellipse = new Shape.Ellipse({
+        center: [50, 50],
+        radius: [40, 20]
+    });
+    imported = new Shape().importJSON(
+            '["Shape",{"applyMatrix":false,"matrix":[1,0,0,1,50,50],' +
+            '"radius":[40,20],"size":[80,40],"type":"ellipse"}]');
+    equals(imported, ellipse);
+});
+
 test('Item#importJSON() does not override Item#insert()', function() {
     var path = new Path();
     equals(typeof path.insert, 'function');
     path.importJSON(path.exportJSON());
     equals(typeof path.insert, 'function');
+});
+
+test('Item#importJSON() resets the fields that the JSON leaves out (#1425, #1324)', function() {
+    var path = new Path.Rectangle({
+        point: [10, 10],
+        size: [20, 20],
+        fillColor: 'red',
+        strokeWidth: 4,
+        name: 'changed',
+        visible: false,
+        selected: true
+    });
+    path.rotate(30);
+    var handled = false;
+    path.onMouseDown = function() {
+        handled = true;
+    };
+    var parent = path.parent,
+        index = path.index;
+    var res = path.importJSON(
+            '["Path",{"segments":[[0,0],[10,0],[10,10]],"closed":true}]');
+    // The same as importing a new item:
+    equals(res === path, true, 'same item');
+    equals(path.segments.length, 3);
+    equals(path.visible, true, 'visible');
+    equals(path.selected, false, 'selected');
+    equals(!path.name, true, 'name');
+    equals(path.fillColor, null, 'fillColor');
+    equals(path.strokeWidth, 1, 'strokeWidth');
+    equals(path.matrix.isIdentity(), true, 'matrix');
+    // But it keeps its place in the scene graph and its handlers:
+    equals(path.parent === parent && path.index === index, true, 'place');
+    equals(path.responds('mousedown'), true, 'handlers');
+    // Groups lose the children that the JSON doesn't have:
+    var group = new Group([new Path.Circle([50, 50], 10)]);
+    group.importJSON('["Group",{}]');
+    equals(group.children.length, 0, 'group children');
 });

@@ -224,3 +224,61 @@ test('Nested group.matrix.apply(true, true) with matrices not applied', function
         return path.applyMatrix;
     }, true);
 });
+
+test('Clipping with a group that is clipped itself (#1618)', function() {
+    function createClipped(clipItem) {
+        clipItem.clipMask = true;
+        return new Group([clipItem, new Path.Rectangle({
+            point: [0, 0],
+            size: [200, 200],
+            fillColor: 'red'
+        })]);
+    }
+
+    // The circle lies inside the group's own clip rectangle, so the group clips
+    // with the circle, not with the rectangle around it:
+    comparePixels(
+        createClipped(new Group([
+            new Path.Rectangle({ point: [0, 0], size: [50, 50], clipMask: true }),
+            new Path.Circle({ center: [25, 25], radius: 20 })
+        ])),
+        createClipped(new Path.Circle({ center: [25, 25], radius: 20 })),
+        'clipping with a clipped group');
+    // SVG with a viewBox imports as a group clipped to the viewBox:
+    comparePixels(
+        createClipped(project.importSVG(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"'
+            + ' viewBox="0 0 100 100"><circle cx="50" cy="50" r="20"/></svg>')),
+        createClipped(new Path.Circle({ center: [50, 50], radius: 20 })),
+        'clipping with imported SVG');
+});
+
+test('group.isolated keeps compositing inside the group (#474)', function() {
+    function createGroup(isolated) {
+        var rect = new Path.Rectangle({
+            point: [0, 0],
+            size: [40, 40],
+            fillColor: 'red'
+        });
+        var eraser = new Group({
+            children: [new Path.Circle({
+                center: [20, 20],
+                radius: 10,
+                fillColor: 'black',
+                blendMode: 'destination-out'
+            })],
+            isolated: isolated
+        });
+        return new Group([rect, eraser]);
+    }
+    // Without isolation, the circle erases the rectangle below it:
+    var raster = createGroup(false).rasterize({ resolution: 72 });
+    equals(raster.getPixel(20, 20).alpha, 0, 'erased');
+    // With it, it only erases inside its own group:
+    raster = createGroup(true).rasterize({ resolution: 72 });
+    equals(raster.getPixel(20, 20), new Color(1, 0, 0, 1), 'kept');
+    var group = new Group({ isolated: true });
+    equals(group.isolated, true, 'isolated');
+    equals(group.exportJSON(), '["Group",{"applyMatrix":true,"isolated":true}]',
+            'exportJSON()');
+});

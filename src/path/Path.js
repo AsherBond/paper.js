@@ -73,7 +73,10 @@ var Path = PathItem.extend(/** @lends Path# */{
      */
     /**
      * Creates a new path item from SVG path-data and places it at the top of
-     * the active layer.
+     * the active layer. A path holds a single sub-path: further `M` commands
+     * are ignored, and the commands that follow them continue the same path.
+     * Use {@link CompoundPath} or {@link PathItem.create(pathData)} to create
+     * items with multiple sub-paths.
      *
      * @name Path#initialize
      * @param {String} pathData the SVG path-data that describes the geometry
@@ -372,6 +375,7 @@ var Path = PathItem.extend(/** @lends Path# */{
             coords = new Array(6);
         for (var i = 0, l = segments.length; i < l; i++)
             segments[i]._transformCoordinates(matrix, coords, true);
+        this._scaleStroke(matrix);
         return true;
     },
 
@@ -708,11 +712,14 @@ var Path = PathItem.extend(/** @lends Path# */{
      */
     /**
      * Removes the segments from the specified `from` index to the `to` index
-     * from the path's {@link #segments} array.
+     * from the path's {@link #segments} array. On closed paths, `from` can be
+     * bigger than `to`, to remove the segments from `from` to the end and then
+     * from the beginning up to `to`, wrapping around the closing curve.
      *
      * @param {Number} from the beginning index, inclusive
      * @param {Number} [to=segments.length] the ending index, exclusive
-     * @return {Segment[]} an array containing the removed segments
+     * @return {Segment[]} an array containing the removed segments, in the
+     *     order in which they appeared along the path
      *
      * @example {@paperscript}
      * // Removing segments from a path:
@@ -734,6 +741,10 @@ var Path = PathItem.extend(/** @lends Path# */{
     removeSegments: function(start, end, _includeCurves) {
         start = start || 0;
         end = Base.pick(end, this._segments.length);
+        // On closed paths, wrap around from the end to the beginning:
+        if (start > end && this._closed)
+            return this.removeSegments(start).concat(
+                    this.removeSegments(0, end));
         var segments = this._segments,
             curves = this._curves,
             count = segments.length, // segment count before removal
@@ -991,7 +1002,7 @@ var Path = PathItem.extend(/** @lends Path# */{
      *
      * @param {Number|CurveLocation} location the offset or location at which to
      *     split the path
-     * @return {Path} the newly created path after splitting, if any
+     * @return {?Path} the newly created path after splitting, if any
      *
      * @example {@paperscript}
      * var path = new Path.Circle({
@@ -1053,7 +1064,7 @@ var Path = PathItem.extend(/** @lends Path# */{
             time = 0;
         }
         var curves = this.getCurves();
-        if (index >= 0 && index < curves.length) {
+        if (loc && index < curves.length) {
             // Only divide curves if we're not on an existing segment already.
             if (time >= tMin) {
                 // Divide the curve with the index at the given curve-time.
@@ -1089,6 +1100,9 @@ var Path = PathItem.extend(/** @lends Path# */{
     },
 
     /**
+     * @param {Number} index
+     * @param {Number} [time]
+     * @return {Path}
      * @deprecated use use {@link #splitAt(offset)} instead.
      */
     split: function(index, time) {
@@ -1217,9 +1231,15 @@ var Path = PathItem.extend(/** @lends Path# */{
     },
 
     /**
-     * Reduces the path by removing curves that have a length of 0,
-     * and unnecessary segments between two collinear flat curves.
+     * Reduces the path by removing straight curves that have a length of 0.
+     * With `options.simplify`, it also removes straight curves that are almost
+     * 0 in length, and unnecessary segments between two collinear straight
+     * curves.
      *
+     * @option [options.simplify=false] {Boolean} also remove almost zero-length
+     *     curves and segments between collinear straight curves
+     *
+     * @param {Object} [options] the reduce options
      * @return {Path} the reduced path
      */
     reduce: function(options) {
@@ -1560,7 +1580,7 @@ var Path = PathItem.extend(/** @lends Path# */{
             shape._matrix.prepend(this._matrix);
             // Determine and apply the shape's angle of rotation.
             shape.rotate(topCenter.subtract(center).getAngle() + 90);
-            if (insert === undefined || insert)
+            if (Base.pick(insert, paper.settings.insertItems))
                 shape.insertAbove(this);
             return shape;
         }
@@ -1665,8 +1685,13 @@ var Path = PathItem.extend(/** @lends Path# */{
             strokePadding = tolerancePadding,
             join, cap, miterLimit,
             area, loc, res,
+            // When collecting all hits for hitTestAll(), we report every
+            // segment and handle in range, not just the first one:
+            hits = options.all && [],
             hitStroke = options.stroke && style.hasStroke(),
-            hitFill = options.fill && style.hasFill(),
+            // Transparent fills are hit too, only no fill isn't, as in SVG
+            // (#1157):
+            hitFill = options.fill && !!style.getFillColor(),
             hitCurves = options.curves,
             strokeRadius = hitStroke
                     ? style.getStrokeWidth() / 2
@@ -1702,10 +1727,13 @@ var Path = PathItem.extend(/** @lends Path# */{
                 if (pt !== anchor)
                     pt = pt.add(anchor);
                 if (isCloseEnough(pt, strokePadding)) {
-                    return new HitResult(name, that, {
+                    var hit = new HitResult(name, that, {
                         segment: seg,
                         point: pt
                     });
+                    if (!hits)
+                        return hit;
+                    hits.push(hit);
                 }
             }
         }
@@ -1745,7 +1773,8 @@ var Path = PathItem.extend(/** @lends Path# */{
                         Path._addBevelJoin(segment, join, strokeRadius,
                                miterLimit, null, strokeMatrix, addToArea, true);
                     }
-                } else if (cap === 'square') {
+                } else {
+                    // _addSquareCap() handles both 'square' and 'butt' caps.
                     Path._addSquareCap(segment, cap, strokeRadius, null,
                             strokeMatrix, addToArea, true);
                 }
@@ -1808,7 +1837,7 @@ var Path = PathItem.extend(/** @lends Path# */{
         // Don't process loc yet, as we also need to query for stroke after fill
         // in some cases. Simply skip fill query if we already have a matching
         // stroke. If we have a loc and no stroke then it's a result for fill.
-        return !loc && hitFill && this._contains(point)
+        res = !loc && hitFill && this._contains(point)
                 || loc && !hitStroke && !hitCurves
                     ? new HitResult('fill', this)
                     : loc
@@ -1819,6 +1848,17 @@ var Path = PathItem.extend(/** @lends Path# */{
                             point: loc.getPoint()
                         })
                         : null;
+        if (hits) {
+            // Report the closest segments and handles first, then the rest:
+            hits.sort(function(hit1, hit2) {
+                return hit1.point.getDistance(point)
+                        - hit2.point.getDistance(point);
+            });
+            if (res)
+                hits.push(res);
+            return hits;
+        }
+        return res;
     }
 
     // TODO: intersects(item)
@@ -1846,7 +1886,7 @@ var Path = PathItem.extend(/** @lends Path# */{
      * path, `null` otherwise.
      *
      * @param {Point} point the point on the path
-     * @return {CurveLocation} the curve location of the specified point
+     * @return {?CurveLocation} the curve location of the specified point
      */
     getLocationOf: function(/* point */) {
         var point = Point.read(arguments),
@@ -1864,7 +1904,7 @@ var Path = PathItem.extend(/** @lends Path# */{
      * specified point if it lies on the path, `null` otherwise.
      *
      * @param {Point} point the point on the path
-     * @return {Number} the length of the path up to the specified point
+     * @return {?Number} the length of the path up to the specified point
      */
     getOffsetOf: function(/* point */) {
         var loc = this.getLocationOf.apply(this, arguments);
@@ -1872,7 +1912,8 @@ var Path = PathItem.extend(/** @lends Path# */{
     },
 
     /**
-     * Returns the curve location of the specified offset on the path.
+     * Returns the curve location of the specified offset on the path, or
+     * `null` if the offset exceeds the length of the path.
      *
      * @param {Number} offset the offset on the path, where `0` is at
      * the beginning of the path and {@link Path#length} at the end
@@ -2177,12 +2218,11 @@ new function() { // Scope for drawing
     // SegmentPoint objects maybe seem a bit tedious but is worth the benefit in
     // performance.
 
-    function drawHandles(ctx, segments, matrix, size) {
-        // Only draw if size is not null or negative.
-        if (size <= 0) return;
-
-        var half = size / 2,
-            miniSize = size - 2,
+    function drawHandles(ctx, segments, matrix, handleSize, segmentSize) {
+        // Only draw the handles and segments whose size is positive.
+        var handleHalf = handleSize / 2,
+            half = segmentSize / 2,
+            miniSize = segmentSize - 2,
             miniHalf = half - 1,
             coords = new Array(6),
             pX, pY;
@@ -2190,13 +2230,13 @@ new function() { // Scope for drawing
         function drawHandle(index) {
             var hX = coords[index],
                 hY = coords[index + 1];
-            if (pX != hX || pY != hY) {
+            if (handleSize > 0 && (pX != hX || pY != hY)) {
                 ctx.beginPath();
                 ctx.moveTo(pX, pY);
                 ctx.lineTo(hX, hY);
                 ctx.stroke();
                 ctx.beginPath();
-                ctx.arc(hX, hY, half, 0, Math.PI * 2, true);
+                ctx.arc(hX, hY, handleHalf, 0, Math.PI * 2, true);
                 ctx.fill();
             }
         }
@@ -2211,8 +2251,10 @@ new function() { // Scope for drawing
                 drawHandle(2);
             if (selection & /*#=*/SegmentSelection.HANDLE_OUT)
                 drawHandle(4);
+            if (segmentSize <= 0)
+                continue;
             // Draw a rectangle at segment.point:
-            ctx.fillRect(pX - half, pY - half, size, size);
+            ctx.fillRect(pX - half, pY - half, segmentSize, segmentSize);
             // If the point is not selected, draw a white square that is 1px
             // smaller on all sides, but only draw it if size is big enough.
             if (miniSize > 0 && !(selection & /*#=*/SegmentSelection.POINT)) {
@@ -2318,7 +2360,7 @@ new function() { // Scope for drawing
             if (!dontPaint && (hasFill || hasStroke)) {
                 // If the path is part of a compound path or doesn't have a fill
                 // or stroke, there is no need to continue.
-                this._setStyles(ctx, param, viewMatrix);
+                this._setStyles(ctx, param, viewMatrix, strokeMatrix);
                 if (hasFill) {
                     ctx.fill(style.getFillRule());
                     // If shadowColor is defined, clear it after fill, so it
@@ -2360,7 +2402,9 @@ new function() { // Scope for drawing
             drawSegments(ctx, this, matrix);
             // Now stroke it and draw its handles:
             ctx.stroke();
-            drawHandles(ctx, this._segments, matrix, paper.settings.handleSize);
+            var settings = paper.settings;
+            drawHandles(ctx, this._segments, matrix, settings.handleSize,
+                    Base.pick(settings.segmentSize, settings.handleSize));
         }
     };
 },
@@ -2812,81 +2856,57 @@ statics: {
 
     /**
      * Returns the horizontal and vertical padding that a transformed round
-     * stroke adds to the bounding box, by calculating the dimensions of a
-     * rotated ellipse.
+     * stroke adds to the bounding box, by calculating the dimensions of the
+     * transformed circle.
      */
     _getStrokePadding: function(radius, matrix) {
         if (!matrix)
             return [radius, radius];
-        // If a matrix is provided, we need to rotate the stroke circle
-        // and calculate the bounding box of the resulting rotated ellipse:
-        // Get rotated hor and ver vectors, and determine rotation angle
-        // and ellipse values from them:
-        var hor = new Point(radius, 0).transform(matrix),
-            ver = new Point(0, radius).transform(matrix),
-            phi = hor.getAngleInRadians(),
-            a = hor.getLength(),
-            b = ver.getLength();
-        // Formula for rotated ellipses:
-        // x = cx + a*cos(t)*cos(phi) - b*sin(t)*sin(phi)
-        // y = cy + b*sin(t)*cos(phi) + a*cos(t)*sin(phi)
-        // Derivatives (by Wolfram Alpha):
-        // derivative of x = cx + a*cos(t)*cos(phi) - b*sin(t)*sin(phi)
-        // dx/dt = a sin(t) cos(phi) + b cos(t) sin(phi) = 0
-        // derivative of y = cy + b*sin(t)*cos(phi) + a*cos(t)*sin(phi)
-        // dy/dt = b cos(t) cos(phi) - a sin(t) sin(phi) = 0
-        // This can be simplified to:
-        // tan(t) = -b * tan(phi) / a // x
-        // tan(t) =  b * cot(phi) / a // y
-        // Solving for t gives:
-        // t = pi * n - arctan(b * tan(phi) / a) // x
-        // t = pi * n + arctan(b * cot(phi) / a)
-        //   = pi * n + arctan(b / tan(phi) / a) // y
-        var sin = Math.sin(phi),
-            cos = Math.cos(phi),
-            tan = Math.tan(phi),
-            tx = Math.atan2(b * tan, a),
-            ty = Math.atan2(b, tan * a);
-        // Due to symmetry, we don't need to cycle through pi * n solutions:
-        return [Math.abs(a * Math.cos(tx) * cos + b * Math.sin(tx) * sin),
-                Math.abs(b * Math.sin(ty) * cos + a * Math.cos(ty) * sin)];
+        // x = radius * (a * cos(t) + c * sin(t)) is at most
+        // radius * sqrt(a² + c²), and y the same with b and d:
+        var a = matrix._a,
+            b = matrix._b,
+            c = matrix._c,
+            d = matrix._d;
+        return [radius * Math.sqrt(a * a + c * c),
+                radius * Math.sqrt(b * b + d * d)];
     },
 
     _addBevelJoin: function(segment, join, radius, miterLimit, matrix,
             strokeMatrix, addPoint, isArea) {
         // Handles both 'bevel' and 'miter' joins, as they share a lot of code,
         // using different matrices to transform segment points and stroke
-        // vectors to support Style#strokeScaling.
+        // vectors to support Style#strokeScaling. The stroke vectors are only
+        // transformed after constructing the join, as the matrices don't
+        // preserve angles (#2065).
         var curve2 = segment.getCurve(),
             curve1 = curve2.getPrevious(),
             point = curve2.getPoint1().transform(matrix),
-            normal1 = curve1.getNormalAtTime(1).multiply(radius)
-                .transform(strokeMatrix),
-            normal2 = curve2.getNormalAtTime(0).multiply(radius)
-                .transform(strokeMatrix),
-                angle = normal1.getDirectedAngle(normal2);
+            normal1 = curve1.getNormalAtTime(1).multiply(radius),
+            normal2 = curve2.getNormalAtTime(0).multiply(radius),
+            angle = normal1.getDirectedAngle(normal2);
         if (angle < 0 || angle >= 180) {
             normal1 = normal1.negate();
             normal2 = normal2.negate();
         }
         if (isArea)
             addPoint(point);
-        addPoint(point.add(normal1));
+        addPoint(point.add(normal1.transform(strokeMatrix)));
         if (join === 'miter') {
             // Intersect the two lines
-            var corner = new Line(point.add(normal1),
+            var corner = new Line(normal1,
                     new Point(-normal1.y, normal1.x), true
-                ).intersect(new Line(point.add(normal2),
+                ).intersect(new Line(normal2,
                     new Point(-normal2.y, normal2.x), true
                 ), true);
             // See if we actually get a bevel point and if its distance is below
             // the miterLimit. If not, make a normal bevel.
-            if (corner && point.getDistance(corner) <= miterLimit * radius) {
-                addPoint(corner);
+            if (corner && corner.getLength() <= miterLimit * radius) {
+                addPoint(point.add(corner.transform(strokeMatrix)));
             }
         }
         // Produce a normal bevel
-        addPoint(point.add(normal2));
+        addPoint(point.add(normal2.transform(strokeMatrix)));
     },
 
     _addSquareCap: function(segment, cap, radius, matrix, strokeMatrix,
@@ -2900,17 +2920,18 @@ statics: {
             // Checking loc.getTime() for 0 is to see whether this is the first
             // or the last segment of the open path, in order to determine in
             // which direction to flip the normal.
-            normal = loc.getNormal()
-                    .multiply(loc.getTime() === 0 ? radius : -radius)
-                    .transform(strokeMatrix);
+            vector = loc.getNormal()
+                    .multiply(loc.getTime() === 0 ? radius : -radius),
+            normal = vector.transform(strokeMatrix);
         // For square caps, we need to step away from point in the direction of
-        // the tangent, which is the rotated normal.
+        // the tangent, which is the normal rotated before transforming it, as
+        // the matrices don't preserve angles (#2065).
         if (cap === 'square') {
             if (isArea) {
                 addPoint(point.subtract(normal));
                 addPoint(point.add(normal));
             }
-            point = point.add(normal.rotate(-90));
+            point = point.add(vector.rotate(-90).transform(strokeMatrix));
         }
         addPoint(point.add(normal));
         addPoint(point.subtract(normal));

@@ -22,7 +22,8 @@ var gulp = require('gulp'),
 // object, merged in with the options required above.
 var buildOptions = {
     full: { paperScript: true },
-    core: { paperScript: false }
+    core: { paperScript: false },
+    hosted: { paperScript: true, hosted: true }
 };
 
 var buildNames = Object.keys(buildOptions);
@@ -34,7 +35,7 @@ gulp.task('build',
 );
 
 gulp.task('build:copy', function() {
-    gulp.src(['src/node/*.js']).pipe(gulp.dest('dist/node'));
+    return gulp.src(['src/node/*.js']).pipe(gulp.dest('dist/node'));
 });
 
 buildNames.forEach(function(name) {

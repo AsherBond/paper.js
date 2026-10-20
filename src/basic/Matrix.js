@@ -503,14 +503,23 @@ var Matrix = Base.extend(/** @lends Matrix# */{
     },
 
     /**
+     * @function
+     * @param {Matrix} matrix
+     * @return {Matrix}
      * @deprecated use {@link #append(matrix)} instead.
      */
     concatenate: '#append',
     /**
+     * @function
+     * @param {Matrix} matrix
+     * @return {Matrix}
      * @deprecated use {@link #prepend(matrix)} instead.
      */
     preConcatenate: '#prepend',
     /**
+     * @function
+     * @param {Matrix} matrix
+     * @return {Matrix}
      * @deprecated use {@link #appended(matrix)} instead.
      */
     chain: '#appended',
@@ -547,6 +556,11 @@ var Matrix = Base.extend(/** @lends Matrix# */{
     isInvertible: function() {
         var det = this._a * this._d - this._c * this._b;
         return det && !isNaN(det) && isFinite(this._tx) && isFinite(this._ty);
+    },
+
+    // The geometric mean of the scale factors, as used for strokes:
+    _getMeanScale: function() {
+        return Math.sqrt(Math.abs(this._a * this._d - this._b * this._c));
     },
 
     /**

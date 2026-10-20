@@ -28,9 +28,8 @@ var TextItem = Item.extend(/** @lends TextItem# */{
     _serializeFields: {
         content: null
     },
-    // TextItem doesn't make the distinction between the different bounds,
-    // so use the same name for all of them
-    _boundsOptions: { stroke: false, handle: false },
+    // TextItem has no handles, so share the cache of #handleBounds and #bounds:
+    _boundsOptions: { handle: false },
 
     initialize: function TextItem(arg) {
         this._content = '';
@@ -145,6 +144,16 @@ var TextItem = Item.extend(/** @lends TextItem# */{
      */
 
     /**
+     * The tracking of text content: the space added after each character, in
+     * thousandths of an em, as in Adobe Illustrator and InDesign. A tracking of
+     * 100 adds a tenth of the font size.
+     *
+     * @name TextItem#tracking
+     * @type Number
+     * @default 0
+     */
+
+    /**
      * {@grouptitle Paragraph Style}
      *
      * The justification of text paragraphs.
@@ -157,7 +166,7 @@ var TextItem = Item.extend(/** @lends TextItem# */{
 
     /**
      * @bean
-     * @private
+     * @type Style
      * @deprecated use {@link #style} instead.
      */
     getCharacterStyle: '#getStyle',
@@ -165,7 +174,7 @@ var TextItem = Item.extend(/** @lends TextItem# */{
 
     /**
      * @bean
-     * @private
+     * @type Style
      * @deprecated use {@link #style} instead.
      */
     getParagraphStyle: '#getStyle',

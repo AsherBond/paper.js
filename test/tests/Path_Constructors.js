@@ -84,18 +84,43 @@ test('new Path.Arc({ from: from, through: through, to: to })', function() {
 
 test('new Path.RegularPolygon(center, sides, radius)', function() {
     var path = new Path.RegularPolygon(new Point(50, 50), 3, 10);
-    equals(path.segments.toString(), '{ point: { x: 41.33975, y: 55 } },{ point: { x: 50, y: 40 } },{ point: { x: 58.66025, y: 55 } }');
+    equals(path.segments.toString(), '{ point: { x: 50, y: 40 } },{ point: { x: 41.33975, y: 55 } },{ point: { x: 58.66025, y: 55 } }');
 
     var path = new Path.RegularPolygon(new Point(250, 250), 10, 100);
-    equals(path.segments.toString(), '{ point: { x: 219.0983, y: 345.10565 } },{ point: { x: 169.0983, y: 308.77853 } },{ point: { x: 150, y: 250 } },{ point: { x: 169.0983, y: 191.22147 } },{ point: { x: 219.0983, y: 154.89435 } },{ point: { x: 280.9017, y: 154.89435 } },{ point: { x: 330.9017, y: 191.22147 } },{ point: { x: 350, y: 250 } },{ point: { x: 330.9017, y: 308.77853 } },{ point: { x: 280.9017, y: 345.10565 } }');
+    equals(path.segments.toString(), '{ point: { x: 280.9017, y: 154.89435 } },{ point: { x: 219.0983, y: 154.89435 } },{ point: { x: 169.0983, y: 191.22147 } },{ point: { x: 150, y: 250 } },{ point: { x: 169.0983, y: 308.77853 } },{ point: { x: 219.0983, y: 345.10565 } },{ point: { x: 280.9017, y: 345.10565 } },{ point: { x: 330.9017, y: 308.77853 } },{ point: { x: 350, y: 250 } },{ point: { x: 330.9017, y: 191.22147 } }');
+});
+
+test('Path.RegularPolygon() orientation and segment order (#1787)', function() {
+    // As in Illustrator, for any number of sides, the polygon stands on a flat
+    // bottom edge, and its segments run counterclockwise from its top vertex,
+    // or with an even number of sides, from the right end of its top edge:
+    for (var sides = 3; sides <= 12; sides++) {
+        var path = new Path.RegularPolygon([0, 0], sides, 10),
+            points = path.segments.map(function(segment) {
+                return segment.point;
+            }),
+            ys = points.map(function(point) {
+                return point.y;
+            }),
+            top = Math.min.apply(null, ys),
+            bottom = Math.max.apply(null, ys),
+            first = points[0];
+        equals(path.clockwise, false, sides + ' sides: counterclockwise');
+        equals(points.filter(function(point) {
+            return Math.abs(point.y - bottom) < 1e-9;
+        }).length, 2, sides + ' sides: flat bottom edge');
+        equals(Math.abs(first.y - top) < 1e-9
+                && (sides % 2 ? Math.abs(first.x) < 1e-9 : first.x > 0),
+                true, sides + ' sides: first segment');
+    }
 });
 
 test('new Path.RegularPolygon({ center: center, sides: sides, radius: radius })', function() {
     var path = new Path.RegularPolygon({center: new Point(50, 50), sides: 3, radius: 10});
-    equals(path.segments.toString(), '{ point: { x: 41.33975, y: 55 } },{ point: { x: 50, y: 40 } },{ point: { x: 58.66025, y: 55 } }');
+    equals(path.segments.toString(), '{ point: { x: 50, y: 40 } },{ point: { x: 41.33975, y: 55 } },{ point: { x: 58.66025, y: 55 } }');
 
     var path = new Path.RegularPolygon({center: new Point(250, 250), sides: 10, radius: 100});
-    equals(path.segments.toString(), '{ point: { x: 219.0983, y: 345.10565 } },{ point: { x: 169.0983, y: 308.77853 } },{ point: { x: 150, y: 250 } },{ point: { x: 169.0983, y: 191.22147 } },{ point: { x: 219.0983, y: 154.89435 } },{ point: { x: 280.9017, y: 154.89435 } },{ point: { x: 330.9017, y: 191.22147 } },{ point: { x: 350, y: 250 } },{ point: { x: 330.9017, y: 308.77853 } },{ point: { x: 280.9017, y: 345.10565 } }');
+    equals(path.segments.toString(), '{ point: { x: 280.9017, y: 154.89435 } },{ point: { x: 219.0983, y: 154.89435 } },{ point: { x: 169.0983, y: 191.22147 } },{ point: { x: 150, y: 250 } },{ point: { x: 169.0983, y: 308.77853 } },{ point: { x: 219.0983, y: 345.10565 } },{ point: { x: 280.9017, y: 345.10565 } },{ point: { x: 330.9017, y: 308.77853 } },{ point: { x: 350, y: 250 } },{ point: { x: 330.9017, y: 191.22147 } }');
 });
 
 
@@ -153,4 +178,80 @@ test('new Path.Line({ insert: false })', function() {
     equals(function() {
         return path.isInserted();
     }, false);
+});
+
+test('new Path.Rectangle(rectangle, radius)', function() {
+    var path = new Path.Rectangle([0, 0, 10, 20], 2);
+    equals(path.bounds, new Rectangle(0, 0, 10, 20));
+    equals(path.segments.length, 8);
+});
+
+test('new Path.Arc({ insert: false })', function() {
+    var path = new Path.Arc({
+        from: [0, 0],
+        through: [5, 5],
+        to: [10, 0],
+        insert: false
+    });
+    equals(function() {
+        return typeof path.insert;
+    }, 'function');
+    equals(function() {
+        return path.isInserted();
+    }, false);
+    paper.settings.insertItems = false;
+    var path = new Path.Arc({
+        from: [0, 0],
+        through: [5, 5],
+        to: [10, 0],
+        insert: true
+    });
+    paper.settings.insertItems = true;
+    equals(function() {
+        return path.isInserted();
+    }, true);
+});
+
+test('new Path.*({ project: project, parent: parent, insert: insert }) (#2012)', function() {
+    var project = paper.project,
+        project2 = new Project(),
+        group = new Group();
+    project.activate();
+    var props = {
+        Line: { from: [0, 0], to: [10, 10] },
+        Circle: { center: [10, 10], radius: 10 },
+        Ellipse: { point: [0, 0], size: [20, 10] },
+        Rectangle: { point: [0, 0], size: [20, 10] },
+        Arc: { from: [0, 0], through: [5, 5], to: [10, 0] },
+        RegularPolygon: { center: [10, 10], sides: 6, radius: 10 },
+        Star: { center: [10, 10], points: 5, radius1: 5, radius2: 10 }
+    };
+    // Each constructor should handle these just like new Path() does:
+    [
+        { project: project2 },
+        { project: project2, insert: true },
+        { project: project2, insert: false },
+        { parent: group },
+        { parent: group, insert: true },
+        { parent: group, insert: false }
+    ].forEach(function(options, index) {
+        var expected = new Path(options);
+        Base.each(props, function(values, name) {
+            var path = new Path[name](Base.set({}, values, options)),
+                message = 'new Path.' + name + '() with options #' + index;
+            equals(path.project === expected.project, true,
+                    message + ': project');
+            equals(path.parent === expected.parent, true,
+                    message + ': parent');
+            equals(path.isInserted(), expected.isInserted(),
+                    message + ': isInserted()');
+        });
+    });
+    // The geometry is still defined before the other named arguments are set:
+    equals(new Path.Rectangle({
+        point: [0, 0],
+        size: [20, 10],
+        position: [100, 100],
+        project: project2
+    }).bounds, new Rectangle(90, 95, 20, 10));
 });

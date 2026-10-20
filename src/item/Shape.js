@@ -27,6 +27,8 @@ var Shape = Item.extend(/** @lends Shape# */{
         size: null,
         radius: null
     },
+    // Prioritize `type` over `radius`, which depends on it:
+    _prioritize: ['type'],
 
     initialize: function Shape(props, point) {
         this._initialize(props, point);
@@ -61,8 +63,8 @@ var Shape = Item.extend(/** @lends Shape# */{
     },
 
     /**
-     * @private
      * @bean
+     * @type String
      * @deprecated use {@link #type} instead.
      */
     getShape: '#getType',
@@ -126,7 +128,12 @@ var Shape = Item.extend(/** @lends Shape# */{
                 return;
             var size = radius * 2;
             this._radius = radius;
-            this._size._set(size, size);
+            if (this._size) {
+                this._size._set(size, size);
+            } else {
+                // First time, e.g. when no size was set before:
+                this._size = new Size(size, size);
+            }
         } else {
             radius = Size.read(arguments);
             if (!this._radius) {
@@ -167,20 +174,11 @@ var Shape = Item.extend(/** @lends Shape# */{
      * @see Path#toShape(insert)
      */
     toPath: function(insert) {
-        // TODO: Move to Path.createTYPE creators instead of fake constructors.
-        var path = new Path[Base.capitalize(this._type)]({
-            center: new Point(),
-            size: this._size,
-            radius: this._radius,
-            insert: false
-        });
-        path.copyAttributes(this);
-        // The created path will inherit #applyMatrix from this Shape, hence it
-        // will always be false.
+        var path = this._asPathItem();
         // Respect the setting of paper.settings.applyMatrix for new paths:
         if (paper.settings.applyMatrix)
             path.setApplyMatrix(true);
-        if (insert === undefined || insert)
+        if (Base.pick(insert, paper.settings.insertItems))
             path.insertAbove(this);
         return path;
     },
@@ -188,7 +186,17 @@ var Shape = Item.extend(/** @lends Shape# */{
     toShape: '#clone',
 
     _asPathItem: function() {
-        return this.toPath(false);
+        // TODO: Move to Path.createTYPE creators instead of fake constructors.
+        var path = new Path[Base.capitalize(this._type)]({
+            center: new Point(),
+            size: this._size,
+            radius: this._radius,
+            insert: false
+        });
+        // The created path inherits #applyMatrix from this Shape, hence it
+        // will always be false, as required by Item#_asPathItem().
+        path.copyAttributes(this);
+        return path;
     },
 
     _draw: function(ctx, param, viewMatrix, strokeMatrix) {
@@ -261,7 +269,7 @@ var Shape = Item.extend(/** @lends Shape# */{
             ctx.closePath();
         }
         if (!dontPaint && (hasFill || hasStroke)) {
-            this._setStyles(ctx, param, viewMatrix);
+            this._setStyles(ctx, param, viewMatrix, strokeMatrix);
             if (hasFill) {
                 ctx.fill(style.getFillRule());
                 ctx.shadowColor = 'rgba(0,0,0,0)';
@@ -278,14 +286,30 @@ var Shape = Item.extend(/** @lends Shape# */{
     },
 
     _getBounds: function(matrix, options) {
-        var rect = new Rectangle(this._size).setCenter(0, 0),
+        var size = this._size,
+            rect = new Rectangle(size).setCenter(0, 0),
             style = this._style,
             strokeWidth = options.stroke && style.hasStroke()
                     && style.getStrokeWidth();
         // If we're getting the strokeBounds, include the stroke width before
         // or after transforming the rect, based on strokeScaling.
-        if (matrix)
-            rect = matrix._transformBounds(rect);
+        if (matrix) {
+            if (this._type === 'rectangle') {
+                rect = matrix._transformBounds(rect);
+            } else {
+                // Use the exact bounds of the transformed ellipse:
+                // x = a * rx * cos(t) + c * ry * sin(t) is at most
+                // sqrt((a * rx)² + (c * ry)²), and y the same with b and d.
+                var rx = size.width / 2,
+                    ry = size.height / 2,
+                    dx = Math.sqrt(Math.pow(matrix._a * rx, 2)
+                            + Math.pow(matrix._c * ry, 2)),
+                    dy = Math.sqrt(Math.pow(matrix._b * rx, 2)
+                            + Math.pow(matrix._d * ry, 2));
+                rect = new Rectangle(matrix._tx - dx, matrix._ty - dy,
+                        2 * dx, 2 * dy);
+            }
+        }
         return strokeWidth
                 ? rect.expand(Path._getStrokePadding(strokeWidth,
                     this._getStrokeMatrix(matrix, options)))
@@ -351,7 +375,8 @@ new function() { // Scope for _contains() and _hitTestSelf() code.
             var hit = false,
                 style = this._style,
                 hitStroke = options.stroke && style.hasStroke(),
-                hitFill = options.fill && style.hasFill();
+                // Transparent fills are hit too, see Path#_hitTestSelf():
+                hitFill = options.fill && !!style.getFillColor();
             // Just like in Path, use stroke-hit-tests also for hitting fill
             // with tolerance:
             if (hitStroke || hitFill) {

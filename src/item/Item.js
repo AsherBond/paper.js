@@ -58,6 +58,7 @@ var Item = Base.extend(Emitter, /** @lends Item# */{
     _opacity: 1,
     _locked: false,
     _guide: false,
+    _textWrap: null,
     _clipMask: false,
     _selection: 0,
     // Controls whether bounds should appear selected when the item is selected.
@@ -78,6 +79,7 @@ var Item = Base.extend(Emitter, /** @lends Item# */{
         locked: false,
         guide: false,
         clipMask: false,
+        textWrap: null,
         selected: false,
         data: {}
     },
@@ -138,6 +140,12 @@ new function() { // Injection scope for various item event handlers
      * @return {Boolean} {@true if the properties were successfully be applied,
      * or if none were provided}
      */
+    // The style a new item takes: the project's current style, see
+    // Project#currentStyle.
+    _getCurrentStyle: function(project) {
+        return project._currentStyle;
+    },
+
     _initialize: function(props, point) {
         // Define this Item's unique id. But allow the creation of internally
         // used paths with no ids.
@@ -160,7 +168,7 @@ new function() { // Injection scope for various item event handlers
         if (point)
             matrix.translate(point);
         matrix._owner = this;
-        this._style = new Style(project._currentStyle, this, project);
+        this._style = new Style(this._getCurrentStyle(project), this, project);
         // Do not add to the project if it's an internal path,  or if
         // props.insert  or settings.insertItems is false.
         if (internal || hasProps && props.insert == false
@@ -189,10 +197,7 @@ new function() { // Injection scope for various item event handlers
                 // value is the default value, only serialize if the current
                 // value is different from it.
                 var value = that[key];
-                // Style#leading is a special case, as its default value is
-                // dependent on the fontSize. Handle this here separately.
-                if (!Base.equals(value, key === 'leading'
-                        ? fields.fontSize * 1.2 : fields[key])) {
+                if (!Base.equals(value, fields[key])) {
                     props[key] = Base.serialize(value, options,
                             // Do not use compact mode for data
                             key !== 'data', dictionary);
@@ -226,6 +231,9 @@ new function() { // Injection scope for various item event handlers
             // Clear cached bounds, position and decomposed matrix whenever
             // geometry changes.
             this._bounds = this._position = this._decomposed = undefined;
+        } else if (flags & /*#=*/ChangeFlag.STROKE) {
+            // Strokes change the stroke bounds, but not the position:
+            this._bounds = undefined;
         }
         if (flags & /*#=*/ChangeFlag.MATRIX) {
             this._globalMatrix = undefined;
@@ -243,8 +251,24 @@ new function() { // Injection scope for various item event handlers
             // child triggers this notification on the parent.
             Item._clearBoundsCache(this);
         }
+        // Changes of a text wrap, or of what's in it, change the text it wraps:
+        for (var item = this; item && !(item instanceof Layer);
+                item = item._parent) {
+            if (item._textWrap) {
+                var layer = item.getLayer();
+                if (layer)
+                    layer._textWrapVersion++;
+                break;
+            }
+        }
+        // A child that its parent doesn't show is part of the parent, as a
+        // text's path is: its changes are the parent's.
+        var parent = this._parent,
+            owner = parent && !parent.getChildren() && parent;
         if (project)
-            project._changed(flags, this);
+            project._changed(flags, owner ? null : this);
+        if (owner)
+            owner._changed(flags);
         // If this item is a symbol's definition, notify it of the change too
         if (symbol)
             symbol._changed(flags);
@@ -337,14 +361,8 @@ new function() { // Injection scope for various item event handlers
             throw new Error(
                     'Names consisting only of numbers are not supported.');
         var owner = this._getOwner();
-        if (name && owner) {
-            var children = owner._children,
-                namedChildren = owner._namedChildren;
-            (namedChildren[name] = namedChildren[name] || []).push(this);
-            // Only set this item if there isn't one under the same name already
-            if (!(name in children))
-                children[name] = this;
-        }
+        if (name && owner)
+            Base.addNamed(owner._children, owner._namedChildren, name, this);
         this._name = name || undefined;
         this._changed(/*#=*/ChangeFlag.ATTRIBUTE);
     },
@@ -417,6 +435,13 @@ new function() { // Injection scope for various item event handlers
         // Don't access _style directly so Path#getStyle() can be overridden for
         // CompoundPaths.
         this.getStyle().set(style);
+    },
+
+    // The styles that the item's style stands for, merged when read and set on
+    // all when written, see Style.merge() and Style.apply().
+    // @overridable
+    _getStyles: function(/* style, key, setting */) {
+        // None for plain items: their style is their own.
     }
 }, Base.each(['locked', 'visible', 'blendMode', 'opacity', 'guide'],
     // Produce getter/setters for properties. We need setters because we want to
@@ -507,8 +532,10 @@ new function() { // Injection scope for various item event handlers
     /**
      * The blend mode with which the item is composited onto the canvas. Both
      * the standard canvas compositing modes, as well as the new CSS blend modes
-     * are supported. If blend-modes cannot be rendered natively, they are
-     * emulated. Be aware that emulation can have an impact on performance.
+     * are supported. Where the canvas doesn't support a CSS blend mode
+     * natively, it draws as `'normal'`. Paper.js's own modes `'add'`,
+     * `'subtract'`, `'average'`, `'pin-light'` and `'negation'` are emulated,
+     * which can have an impact on performance.
      *
      * @name Item#blendMode
      * @type String
@@ -583,6 +610,51 @@ new function() { // Injection scope for various item event handlers
      * @type Boolean
      * @default false
      */
+
+    /**
+     * Specifies whether, and how, the item pushes aside the text of the
+     * {@link AreaText} items below it in its layer: `null`, or an object with
+     * `offset`, the space kept between them, and `invert`, to let the text
+     * flow inside it instead. `true` sets the defaults.
+     *
+     * @bean
+     * @type Object
+     * @default null
+     *
+     * @example
+     * var circle = new Path.Circle({ center: [100, 100], radius: 40 });
+     * circle.textWrap = { offset: 10 };
+     */
+    getTextWrap: function() {
+        var wrap = this._textWrap;
+        return wrap && Base.set({}, wrap);
+    },
+
+    setTextWrap: function(wrap) {
+        if (wrap || this._textWrap) {
+            this._textWrap = wrap
+                    ? Base.set({ offset: 6, invert: false },
+                        Base.isPlainObject(wrap) ? wrap : null)
+                    : null;
+            this._updateTextWrap();
+            this._changed(/*#=*/Change.ATTRIBUTE);
+        }
+    },
+
+    // Keep the layer's text wraps in sync, and have its area texts lay out
+    // again, see AreaText#_getTextWraps():
+    _updateTextWrap: function(remove) {
+        var layer = this.getLayer();
+        if (layer) {
+            var items = layer._textWrapItems || (layer._textWrapItems = {});
+            if (this._textWrap && !remove) {
+                items[this._id] = this;
+            } else {
+                delete items[this._id];
+            }
+            layer._textWrapVersion++;
+        }
+    },
 
     getSelection: function() {
         return this._selection;
@@ -855,7 +927,6 @@ new function() { // Injection scope for various item event handlers
         this._position = undefined;
     }
 }, Base.each({ // Produce getters for bounds properties:
-        getStrokeBounds: { stroke: true },
         getHandleBounds: { handle: true },
         getInternalBounds: { internal: true }
     },
@@ -897,6 +968,16 @@ new function() { // Injection scope for various item event handlers
                 : rect;
     },
 
+    getStrokeBounds: function(matrix) {
+        var rect = this.getBounds(matrix, { stroke: true });
+        // Link '#strokeBounds' to setStrokeBounds() as '#bounds' is linked to
+        // setBounds() above:
+        return !arguments.length
+                ? new LinkedRectangle(rect.x, rect.y, rect.width, rect.height,
+                    this, 'setStrokeBounds')
+                : rect;
+    },
+
     setBounds: function(/* rect */) {
         var rect = Rectangle.read(arguments),
             bounds = this.getBounds(),
@@ -926,6 +1007,80 @@ new function() { // Injection scope for various item event handlers
         matrix.translate(-center.x, -center.y);
         // Now execute the transformation
         this.transform(matrix);
+    },
+
+    setStrokeBounds: function(/* rect */) {
+        var rect = Rectangle.read(arguments),
+            item = this,
+            bounds = this.getBounds(),
+            center = bounds.getCenter(),
+            // Negative sizes mirror the item, as in setBounds():
+            signX = rect.width < 0 ? -1 : 1,
+            signY = rect.height < 0 ? -1 : 1,
+            width = Math.abs(rect.width),
+            height = Math.abs(rect.height),
+            // Dimensions without size can't be scaled:
+            canScaleX = !!bounds.width,
+            canScaleY = !!bounds.height,
+            // The smallest scale that keeps the matrix invertible, for
+            // rectangles smaller than the stroke itself:
+            min = /*#=*/Numerical.EPSILON,
+            epsilon = /*#=*/Numerical.GEOMETRIC_EPSILON,
+            sx = 1,
+            sy = 1;
+
+        function getMatrix(sx, sy) {
+            return new Matrix().scale(signX * sx, signY * sy, center);
+        }
+
+        // Returns the stroke bounds that the item would have when scaled by sx
+        // and sy, without transforming it. The strokes of items that apply the
+        // scaling to their content keep their width, see #_getStrokeMatrix():
+        function getStrokeBounds(sx, sy) {
+            var matrix = getMatrix(sx, sy);
+            return item.getBounds(matrix.appended(item._matrix), {
+                stroke: true,
+                transform: { matrix: matrix, item: item }
+            });
+        }
+
+        // Under non-uniform scaling, the extent of the stroke changes with the
+        // angles of miters, bevels and square caps, so solve for the scales
+        // with Newton's method, estimating the derivatives from small changes:
+        for (var i = 0; i < 16; i++) {
+            var size = getStrokeBounds(sx, sy).getSize(),
+                fx = canScaleX ? size.width - width : 0,
+                fy = canScaleY ? size.height - height : 0;
+            if (Math.abs(fx) < epsilon && Math.abs(fy) < epsilon)
+                break;
+            // Small changes, but large enough to be measured at tiny scales:
+            var hx = Math.max(sx, 1) * 1e-6,
+                hy = Math.max(sy, 1) * 1e-6,
+                sizeX = getStrokeBounds(sx + hx, sy).getSize(),
+                sizeY = getStrokeBounds(sx, sy + hy).getSize(),
+                a = canScaleX ? (sizeX.width - size.width) / hx : 1,
+                b = canScaleX && canScaleY
+                        ? (sizeY.width - size.width) / hy : 0,
+                c = canScaleX && canScaleY
+                        ? (sizeX.height - size.height) / hx : 0,
+                d = canScaleY ? (sizeY.height - size.height) / hy : 1,
+                det = a * d - b * c;
+            if (!det)
+                break;
+            var nx = Math.max(sx - (fx * d - fy * b) / det, min),
+                ny = Math.max(sy - (fy * a - fx * c) / det, min);
+            // Stop where rectangles smaller than the stroke keep the scales at
+            // their minimum:
+            if (nx === sx && ny === sy)
+                break;
+            sx = nx;
+            sy = ny;
+        }
+        // Scale the item, and move the center of its stroke bounds to the
+        // rectangle's center, which centers what can't be reached:
+        this.transform(new Matrix().translate(rect.getCenter()
+                .subtract(getStrokeBounds(sx, sy).getCenter()))
+                .append(getMatrix(sx, sy)));
     },
 
     /**
@@ -1011,6 +1166,7 @@ new function() { // Injection scope for various item event handlers
             var cached = bounds[cacheKey] = {
                 rect: rect.clone(),
                 nonscaling: nonscaling,
+                stroke: options.stroke,
                 // Mark as internal, so Item#transform() won't transform it
                 internal: internal
             };
@@ -1031,7 +1187,20 @@ new function() { // Injection scope for various item event handlers
         var parent = this.getStrokeScaling() ? null
                 : options && options.internal ? this
                     : this._parent || this._symbol && this._symbol._item,
-            mx = parent ? parent.getViewMatrix().invert() : matrix;
+            mx = parent ? parent.getViewMatrix().invert() : matrix,
+            transform = !parent && options && options.transform;
+        // When predicting the bounds after a transformation, see
+        // #setStrokeBounds(), it doesn't scale the strokes of items that apply
+        // it to their content, all the way up to the transformed item:
+        if (transform) {
+            for (var item = this; item && item._applyMatrix;
+                    item = item._parent) {
+                if (item === transform.item) {
+                    mx = transform.matrix.inverted().appended(mx);
+                    break;
+                }
+            }
+        }
         return mx && mx._shiftless();
     },
 
@@ -1162,6 +1331,11 @@ new function() { // Injection scope for various item event handlers
     /**
      * The bounding rectangle of the item including stroke width.
      *
+     * Setting it fits the item's {@link #bounds} into the given rectangle minus
+     * the extent of the stroke on each side, also where this extent changes
+     * with the item's proportions, as with miters. A rectangle smaller than the
+     * stroke itself shrinks the bounds to its center.
+     *
      * @name Item#strokeBounds
      * @type Rectangle
      */
@@ -1182,15 +1356,6 @@ new function() { // Injection scope for various item event handlers
      *
      * @name Item#internalBounds
      * @type Rectangle
-     */
-
-    /**
-     * The rough bounding rectangle of the item that is sure to include all of
-     * the drawing, including stroke width.
-     *
-     * @name Item#roughBounds
-     * @type Rectangle
-     * @ignore
      */
 }), /** @lends Item# */{
     // Enforce creation of beans, as bean getters have hidden parameters.
@@ -1426,9 +1591,12 @@ new function() { // Injection scope for various item event handlers
      */
     _installEvents: function _installEvents(install) {
         _installEvents.base.call(this, install);
-        // Keep the project's selection in sync with insertion and removal:
+        // Keep the project's selection and the layer's text wraps in sync with
+        // insertion and removal:
         if (this._selection)
             this._project._updateSelection(this, !install);
+        if (this._textWrap)
+            this._updateTextWrap(!install);
         var children = this._children;
         for (var i = 0, l = children && children.length; i < l; i++)
             children[i]._installEvents(install);
@@ -1655,6 +1823,7 @@ new function() { // Injection scope for various item event handlers
                 && this._opacity === item._opacity
                 && this._clipMask === item._clipMask
                 && this._guide === item._guide
+                && Base.equals(this._textWrap, item._textWrap)
                 && this._equals(item)
                 || false;
     },
@@ -1768,7 +1937,7 @@ new function() { // Injection scope for various item event handlers
         // meaning the default value has been overwritten (default is on
         // prototype).
         var keys = ['_locked', '_visible', '_blendMode', '_opacity',
-                '_clipMask', '_guide'];
+                '_clipMask', '_guide', '_textWrap'];
         for (var i = 0, l = keys.length; i < l; i++) {
             var key = keys[i];
             if (source.hasOwnProperty(key))
@@ -1967,19 +2136,43 @@ new function() { // Injection scope for various item event handlers
         });
     },
 
-    // DOCS:
-    // TEST:
     /**
+     * Checks whether the item overlaps with the given item: whether their
+     * outlines cross, or one contains the other, as
+     * {@link Rectangle#intersects(rect)} does for rectangles. Items other than
+     * paths and shapes are checked through their bounds. To only check whether
+     * outlines cross, use {@link PathItem#getIntersections(path)}.
+     *
      * @param {Item} item the item to check against
-     * @return {Boolean}
+     * @return {Boolean} {@true if the items overlap}
      */
     intersects: function(item, _matrix) {
         if (!(item instanceof Item))
             return false;
+        var path1 = this._asPathItem(),
+            path2 = item._asPathItem(),
+            matrix1 = path1._matrix,
+            matrix2 = _matrix || path2._matrix;
+
+        // Checks whether a point of any of the path's sub-paths lies inside
+        // the other path, which then contains it, as the outlines don't cross:
+        function contains(path, matrix, other, otherMatrix) {
+            var paths = path._children || [path];
+            for (var i = 0, l = paths.length; i < l; i++) {
+                var segment = paths[i]._segments[0],
+                    point = segment && otherMatrix._inverseTransform(
+                            matrix._transformPoint(segment._point));
+                if (point && other._contains(point))
+                    return true;
+            }
+            return false;
+        }
+
         // Tell getIntersections() to return as soon as some intersections are
         // found, because all we care for here is there are some or none:
-        return this._asPathItem().getIntersections(item._asPathItem(), null,
-                _matrix, true).length > 0;
+        return path1.getIntersections(path2, null, _matrix, true).length > 0
+                || contains(path2, matrix2, path1, matrix1)
+                || contains(path1, matrix1, path2, matrix2);
     }
 },
 new function() { // Injection scope for hit-test functions shared with project
@@ -2112,10 +2305,10 @@ new function() { // Injection scope for hit-test functions shared with project
             return null;
         }
 
-        // Check if the point is withing roughBounds + tolerance, but only if
-        // this item does not have children, since we'd have to travel up the
-        // chain already to determine the rough bounds. Shells of hosted items
-        // know their rough bounds without loading their children.
+        // Check if the point is within the bounds including stroke and handles
+        // + tolerance, but only if this item does not have children, since
+        // we'd have to travel up the chain already to determine these bounds.
+        // Shells of hosted items know them without loading their children.
         var matrix = this._matrix,
             // If this is the first one in the recursion, the point is in global
             // coordinates, so transform it by the item's globalMatrix:
@@ -2136,7 +2329,7 @@ new function() { // Injection scope for hit-test functions shared with project
             // correct 2D padding for tolerance, we therefore need to apply the
             // inverted accumulated matrices without the view's matrix.
             tolerancePadding = options._tolerancePadding = new Size(
-                    Path._getStrokePadding(tolerance, viewMatrix
+                    Matrix._getCircleExtents(tolerance, viewMatrix
                         .prepended(this.getView()._matrix.inverted())
                         ._shiftless().invert()));
         // Transform point to local coordinates.
@@ -2456,8 +2649,8 @@ new function() { // Injection scope for hit-test functions shared with project
                             // contained, we are always overlapping, and don't
                             // need to perform further checks, otherwise perform
                             // a proper #intersects() check:
-                            || param.overlapping && (bounds.contains(rect)
-                                || param.path.intersects(child, childMatrix))))
+                            || param.overlapping
+                                && param.path.intersects(child, childMatrix)))
                         add = false;
                 }
                 if (add && child.matches(options)) {
@@ -2465,7 +2658,8 @@ new function() { // Injection scope for hit-test functions shared with project
                     if (firstOnly)
                         break;
                 }
-                if (param.recursive !== false) {
+                // Only into the children that the item shows:
+                if (param.recursive !== false && child.getChildren()) {
                     _getItems(child, options, childMatrix, param, firstOnly);
                 }
                 if (firstOnly && items.length > 0)
@@ -2560,6 +2754,12 @@ new function() { // Injection scope for hit-test functions shared with project
      * @option [options.reduceAttributes=true] {Boolean} wether to only include
      *     style attributes in the SVG output that differ from their parents,
      *     or to always include them (much faster but leading to redundancies).
+     * @option [options.processNode] {Function} the function to process the
+     *     SVG node made for each exported item, receiving an object with the
+     *     `item` and its `node`: It can change the node, e.g. to add attributes
+     *     that Paper.js doesn't export, or return a node to replace it with. It
+     *     is called before the item's name, style, visibility and data are set
+     *     on the node, which replace attributes of the same names.
      *
      * @param {Object} [options] the export options
      * @return {SVGElement|String} the item converted to an SVG node or a
@@ -2574,6 +2774,11 @@ new function() { // Injection scope for hit-test functions shared with project
      * `<symbol>` elements are imported as {@link SymbolDefinition} items, and
      * the `<use>` elements that place them as {@link SymbolItem} items. The
      * styles that `<use>` elements inherit don't reach the symbols' content.
+     *
+     * The layers in SVG content that Paper.js exported come back as
+     * {@link Layer} items inside the imported group. To make the layers of a
+     * project's SVG the layers of a project again, add them to it with
+     * `item.children.slice().forEach(project.addLayer, project)`.
      *
      * URLs are fetched as they are, so validate URLs that come from untrusted
      * sources first, especially on servers, where they could reach internal
@@ -2599,6 +2804,13 @@ new function() { // Injection scope for hit-test functions shared with project
      * @option [options.applyMatrix={@link PaperScope#settings}.applyMatrix]
      *     {Boolean} whether the imported items should have their transformation
      *     matrices applied to their contents or not
+     * @option [options.processItem] {Function} the function to process the
+     *     item made for each imported SVG element, receiving an object with
+     *     the `item` and its `node`: It can read attributes that Paper.js
+     *     doesn't import, or return an item to replace it with. It is called
+     *     after the element's attributes and data are applied to the item, so
+     *     it can extend `item.data`. A replacement item doesn't receive them:
+     *     copy them over from `item` as needed.
      *
      * @param {SVGElement|String} svg the SVG content to import, either as a SVG
      *     DOM node, a string containing SVG content, or a string describing the
@@ -2689,8 +2901,10 @@ new function() { // Injection scope for hit-test functions shared with project
                 var item = items[i],
                     id = item && item._id;
                 // If an item was inserted already, it must be included multiple
-                // times in the items array. Only insert once.
-                if (!item || inserted[id]) {
+                // times in the items array. Only insert once. Also leave out
+                // this item and its ancestors, which would create a cycle:
+                if (!item || inserted[id] || item === this
+                        || this.isDescendant(item)) {
                     items.splice(i, 1);
                 } else {
                     // Notify parent of change. Don't notify item itself yet,
@@ -2699,6 +2913,8 @@ new function() { // Injection scope for hit-test functions shared with project
                     inserted[id] = true;
                 }
             }
+            if (!items.length)
+                return null;
             Base.splice(children, items, index, 0);
             var project = this._project,
                 // See #_remove() for an explanation of this:
@@ -2887,28 +3103,9 @@ new function() { // Injection scope for hit-test functions shared with project
      */
     _removeNamed: function() {
         var owner = this._getOwner();
-        if (owner) {
-            var children = owner._children,
-                namedChildren = owner._namedChildren,
-                name = this._name,
-                namedArray = namedChildren[name],
-                index = namedArray ? namedArray.indexOf(this) : -1;
-            if (index !== -1) {
-                // Remove the named reference
-                if (children[name] == this)
-                    delete children[name];
-                // Remove this entry
-                namedArray.splice(index, 1);
-                // If there are any items left in the named array, set the first
-                // of them to be children[this.name]
-                if (namedArray.length) {
-                    children[name] = namedArray[0];
-                } else {
-                    // Otherwise delete the empty array
-                    delete namedChildren[name];
-                }
-            }
-        }
+        if (owner)
+            Base.removeNamed(owner._children, owner._namedChildren, this._name,
+                    this);
     },
 
     /**
@@ -2964,17 +3161,21 @@ new function() { // Injection scope for hit-test functions shared with project
     },
 
     /**
-     * Replaces this item with the provided new item which will takes its place
-     * in the project hierarchy instead.
+     * Replaces this item with the provided new items which will take its place
+     * in the project hierarchy instead, in the given order. This also ungroups
+     * a group, e.g. `group.replaceWith(...group.children)`, but note that the
+     * items keep their own matrices, see {@link Group#ungroup()}.
      *
-     * @param {Item} item the item that will replace this item
+     * @param {...Item} item the items that will replace this item
      * @return {Boolean} {@true if the item was replaced}
      */
     replaceWith: function(item) {
-        var ok = item && item.insertBelow(this);
+        var ok = item;
+        for (var i = 0, l = arguments.length; i < l && ok; i++)
+            ok = arguments[i] && arguments[i].insertBelow(this);
         if (ok)
             this.remove();
-        return ok;
+        return ok && item;
     },
 
     /**
@@ -3426,6 +3627,19 @@ new function() { // Injection scope for hit-test functions shared with project
      */
 
     /**
+     * The order in which the fill and the stroke are painted, as in SVG's
+     * `paint-order`, named after what is painted first: `'fill'` paints the
+     * fill first, `'stroke'` paints the stroke first, so the fill covers its
+     * inner half.
+     *
+     * @name Item#paintOrder
+     * @property
+     * @type String
+     * @values 'fill', 'stroke'
+     * @default 'fill'
+     */
+
+    /**
      * {@grouptitle Fill Style}
      *
      * The fill color of the item.
@@ -3779,9 +3993,11 @@ new function() { // Injection scope for hit-test functions shared with project
             for (var key in bounds) {
                 var cache = bounds[key];
                 // If any item involved in the determination of these bounds has
-                // non-scaling strokes, delete the cache now as it can't be
-                // preserved through the transformation.
-                if (cache.nonscaling) {
+                // non-scaling strokes, or if a scaling matrix is applied to
+                // the content without scaling its strokes, delete the cache
+                // now as it can't be preserved through the transformation.
+                if (cache.nonscaling || applyMatrix && cache.stroke
+                        && !decomp.scaling.abs().equals([1, 1])) {
                     delete bounds[key];
                 } else if (applyMatrix || !cache.internal) {
                     // If these are internal bounds, only transform them if this
@@ -4482,11 +4698,12 @@ new function() { // Injection scope for hit-test functions shared with project
      * Not defined in Path as it is required by other classes too,
      * e.g. PointText.
      */
-    _setStyles: function(ctx, param, viewMatrix, strokeMatrix) {
+    _setStyles: function(ctx, param, viewMatrix, strokeMatrix, style) {
         // We can access internal properties since we're only using this on
-        // items without children, where styles would be merged.
-        var style = this._style,
-            matrix = this._matrix;
+        // items without children, where styles would be merged. Text passes
+        // the style of each of its runs.
+        var matrix = this._matrix;
+        style = style || this._style;
         if (style.hasFill()) {
             ctx.fillStyle = style.getFillColor().toCanvasStyle(ctx, matrix,
                     strokeMatrix);
@@ -4504,36 +4721,74 @@ new function() { // Injection scope for hit-test functions shared with project
                 ctx.lineCap = strokeCap;
             if (miterLimit)
                 ctx.miterLimit = miterLimit;
-            if (paper.support.nativeDash) {
-                var dashArray = style.getDashArray(),
-                    dashOffset = style.getDashOffset();
-                if (dashArray && dashArray.length) {
-                    if ('setLineDash' in ctx) {
-                        ctx.setLineDash(dashArray);
-                        ctx.lineDashOffset = dashOffset;
-                    } else {
-                        ctx.mozDash = dashArray;
-                        ctx.mozDashOffset = dashOffset;
-                    }
-                }
+            var dashArray = style.getDashArray();
+            if (dashArray && dashArray.length) {
+                ctx.setLineDash(dashArray);
+                ctx.lineDashOffset = style.getDashOffset();
             }
         }
-        if (style.hasShadow()) {
-            // In Canvas, shadows unfortunately ignore all transformations
-            // completely. As almost no browser supports ctx.currentTransform,
-            // we need to calculate our own here, and then use it to transform
-            // the shadow-blur and offset accordingly.
-            var pixelRatio = param.pixelRatio || 1,
-                mx = viewMatrix._shiftless().prepend(
-                    new Matrix().scale(pixelRatio, pixelRatio)),
-                // Transform the blur value as a vector and use its new length:
-                blur = mx.transform(new Point(style.getShadowBlur(), 0)),
-                offset = mx.transform(this.getShadowOffset());
-            ctx.shadowColor = style.getShadowColor().toCanvasStyle(ctx);
-            ctx.shadowBlur = blur.getLength();
-            ctx.shadowOffsetX = offset.x;
-            ctx.shadowOffsetY = offset.y;
+        // The shadow is the item's, also for text, which passes the styles of
+        // its runs. Items whose shadow is cast when compositing them don't
+        // draw it, see #draw():
+        if (this._style.hasShadow() && !param.dontShadow)
+            this._setShadow(ctx, param, viewMatrix);
+    },
+
+    /**
+     * Private method that fills and strokes the path defined on the canvas
+     * context, shared by Path, CompoundPath and Shape.
+     */
+    _paint: function(ctx, param, viewMatrix, strokeMatrix) {
+        var style = this._style,
+            hasFill = style.hasFill(),
+            hasStroke = style.hasStroke();
+        if (hasFill || hasStroke) {
+            var isStrokeFirst = hasStroke && style.getPaintOrder() === 'stroke';
+            this._setStyles(ctx, param, viewMatrix, strokeMatrix);
+            // If shadowColor is defined, clear it after the first paint, so it
+            // won't be applied to both fill and stroke.
+            if (isStrokeFirst) {
+                ctx.stroke();
+                ctx.shadowColor = 'rgba(0,0,0,0)';
+            }
+            if (hasFill) {
+                // Elliptical radial gradients are drawn as circles, through
+                // the matrix that stretches them, see Color#toCanvasStyle():
+                var fillColor = style.getFillColor(),
+                    ellipse = fillColor._getEllipseMatrix(this._matrix,
+                        strokeMatrix);
+                if (ellipse) {
+                    ctx.save();
+                    ellipse.applyToContext(ctx);
+                    ctx.fillStyle = fillColor.toCanvasStyle(ctx, null, null,
+                            true);
+                }
+                ctx.fill(style.getFillRule());
+                if (ellipse)
+                    ctx.restore();
+                ctx.shadowColor = 'rgba(0,0,0,0)';
+            }
+            if (hasStroke && !isStrokeFirst)
+                ctx.stroke();
         }
+    },
+
+    _setShadow: function(ctx, param, viewMatrix) {
+        // In Canvas, shadows unfortunately ignore all transformations
+        // completely. As almost no browser supports ctx.currentTransform,
+        // we need to calculate our own here, and then use it to transform
+        // the shadow-blur and offset accordingly.
+        var style = this._style,
+            pixelRatio = param.pixelRatio || 1,
+            mx = viewMatrix._shiftless().prepend(
+                new Matrix().scale(pixelRatio, pixelRatio)),
+            // Transform the blur value as a vector and use its new length:
+            blur = mx.transform(new Point(style.getShadowBlur(), 0)),
+            offset = mx.transform(this.getShadowOffset());
+        ctx.shadowColor = style.getShadowColor().toCanvasStyle(ctx);
+        ctx.shadowBlur = blur.getLength();
+        ctx.shadowOffsetX = offset.x;
+        ctx.shadowOffsetY = offset.y;
     },
 
     draw: function(ctx, param, parentStrokeMatrix) {
@@ -4585,21 +4840,30 @@ new function() { // Injection scope for hit-test functions shared with project
             opacity = Numerical.clamp(this._opacity, 0, 1),
             normalBlend = blendMode === 'normal',
             nativeBlend = BlendMode.nativeModes[blendMode],
+            style = this._style,
+            // Canvas fills and strokes separately, so items with both can only
+            // cast the shadow of one. Draw them on a temporary canvas, and cast
+            // the shadow when compositing it, which native blending can. Pass
+            // true for _dontMerge, as groups don't draw the shadows of their
+            // children (#892):
+            shadow = (normalBlend || nativeBlend)
+                    && style.getShadowColor(true) && style.hasShadow()
+                    && style.hasFill() && style.hasStroke(),
             // Determine if we can draw directly, or if we need to draw into a
             // separate canvas and then composite onto the main canvas.
-            direct = normalBlend && opacity === 1 && !this._isolated
-                    || param.dontStart // e.g. CompoundPath
-                    || param.clip
+            direct = !shadow && (normalBlend && opacity === 1
+                        && !this._isolated
                     // If native blending is possible, see if the item allows it
                     || (nativeBlend || normalBlend && opacity < 1)
-                        && this._canComposite(),
+                        && this._canComposite())
+                    || param.dontStart // e.g. CompoundPath
+                    || param.clip,
             pixelRatio = param.pixelRatio || 1,
             mainCtx, itemOffset, prevOffset;
         if (!direct) {
             // Apply the parent's global matrix to the calculation of correct
             // bounds, and include the item's shadow (#1628).
-            var bounds = this.getStrokeBounds(viewMatrix),
-                style = this._style;
+            var bounds = this.getStrokeBounds(viewMatrix);
             // Pass true for _dontMerge, as groups don't draw the shadows of
             // their children.
             if (style.getShadowColor(true)) {
@@ -4692,7 +4956,9 @@ new function() { // Injection scope for hit-test functions shared with project
             if (offset)
                 ctx.translate(-offset.x, -offset.y);
         }
-        this._draw(ctx, param, viewMatrix, strokeMatrix);
+        this._draw(ctx, shadow && !direct
+                ? param.extend({ dontShadow: true }) : param,
+                viewMatrix, strokeMatrix);
         ctx.restore();
         matrices.pop();
         if (param.clip && !param.dontFinish) {
@@ -4701,12 +4967,18 @@ new function() { // Injection scope for hit-test functions shared with project
         }
         // If a temporary canvas was created, composite it onto the main canvas:
         if (!direct) {
+            if (shadow) {
+                mainCtx.save();
+                this._setShadow(mainCtx, param, viewMatrix);
+            }
             // Use BlendMode.process even for processing normal blendMode with
             // opacity.
             BlendMode.process(blendMode, ctx, mainCtx, opacity,
                     // Calculate the pixel offset of the temporary canvas to the
                     // main canvas. We also need to factor in the pixel-ratio.
                     itemOffset.subtract(prevOffset).multiply(pixelRatio));
+            if (shadow)
+                mainCtx.restore();
             // Return the temporary context, so it can be reused
             CanvasProvider.release(ctx);
             // Restore previous offset.
@@ -4743,11 +5015,14 @@ new function() { // Injection scope for hit-test functions shared with project
             itemSelected = selection & /*#=*/ItemSelection.ITEM,
             boundsSelected = selection & /*#=*/ItemSelection.BOUNDS
                     || itemSelected && this._selectBounds,
+            strokeBoundsSelected = selection
+                    & /*#=*/ItemSelection.STROKE_BOUNDS,
             positionSelected = selection & /*#=*/ItemSelection.POSITION;
         if (!this._drawSelected)
             itemSelected = false;
         // Items of symbol definitions are drawn too, but aren't inserted:
-        if ((itemSelected || boundsSelected || positionSelected)
+        if ((itemSelected || boundsSelected || strokeBoundsSelected
+                || positionSelected)
                 && this._isUpdated(updateVersion) && this.isInserted()) {
             // Allow definition of selected color on a per item and per
             // layer level, with a fallback to #009dec
@@ -4783,8 +5058,8 @@ new function() { // Injection scope for hit-test functions shared with project
                     ctx.stroke();
                 }
             }
-            if (boundsSelected) {
-                var coords = mx._transformCorners(this.getInternalBounds());
+            var drawBounds = function(bounds) {
+                var coords = mx._transformCorners(bounds);
                 // Now draw a rectangle that connects the transformed
                 // bounds corners, and draw the corners.
                 ctx.beginPath();
@@ -4797,7 +5072,11 @@ new function() { // Injection scope for hit-test functions shared with project
                     ctx.fillRect(coords[i] - half, coords[++i] - half,
                             size, size);
                 }
-            }
+            };
+            if (boundsSelected)
+                drawBounds(this.getInternalBounds());
+            if (strokeBoundsSelected)
+                drawBounds(this.getBounds({ internal: true, stroke: true }));
         }
     },
 

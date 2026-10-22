@@ -256,6 +256,18 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
     },
 
     /**
+     * The rectangle's position and size as an array,
+     * `[x, y, width, height]`, as {@link Matrix#values} gives those of a
+     * matrix.
+     *
+     * @bean
+     * @type Number[]
+     */
+    getValues: function() {
+        return [this.x, this.y, this.width, this.height];
+    },
+
+    /**
      * The top-left point of the rectangle. Setting it moves the whole
      * rectangle, unlike {@link #topLeft}.
      *
@@ -775,27 +787,39 @@ var Rectangle = Base.extend(/** @lends Rectangle# */{
     },
 
     /**
-     * Returns a new rectangle scaled by the specified amount from its center.
+     * Returns a new rectangle scaled by the specified factor from its center,
+     * or from the given center point.
      *
      * @name Rectangle#scale
      * @function
-     * @param {Number} amount
+     * @param {Number} scale the scale factor
+     * @param {Point} [center={@link Rectangle#center}]
      * @return {Rectangle} the scaled rectangle
      */
     /**
      * Returns a new rectangle scaled in horizontal direction by the specified
-     * `hor` amount and in vertical direction by the specified `ver` amount
-     * from its center.
+     * `hor` factor and in vertical direction by the specified `ver` factor
+     * from its center, or from the given center point.
      *
      * @name Rectangle#scale
      * @function
-     * @param {Number} hor
-     * @param {Number} ver
+     * @param {Number} hor the horizontal scale factor
+     * @param {Number} ver the vertical scale factor
+     * @param {Point} [center={@link Rectangle#center}]
      * @return {Rectangle} the scaled rectangle
      */
-    scale: function(hor, ver) {
-        return this.expand(this.width * hor - this.width,
-                this.height * (ver === undefined ? hor : ver) - this.height);
+    scale: function(/* scale, center */) {
+        var args = arguments,
+            scale = Point.read(args),
+            center = Point.read(args, 0, { readNull: true })
+                    || this.getCenter(true);
+        // Scale the corners from the center, which also normalizes the
+        // rectangle for negative amounts:
+        return new Rectangle(
+                this.getTopLeft(true).subtract(center).multiply(scale)
+                    .add(center),
+                this.getBottomRight(true).subtract(center).multiply(scale)
+                    .add(center));
     }
 }, Base.each([
         ['Top', 'Left'], ['Top', 'Right'],
@@ -904,10 +928,11 @@ new function() {
              * Paper.js draws the bounds of items with selected bounds on top of
              * your project. This is very useful when debugging.
              *
-             * This property is only available on the rectangle returned by
-             * {@link Item#bounds}, and the selection always shows these bounds.
-             * Rectangles returned by other getters such as {@link
-             * Item#strokeBounds} don't have it.
+             * This property is only available on the rectangles returned by
+             * {@link Item#bounds} and {@link Item#strokeBounds}, which are
+             * selected independently of each other, each showing its own
+             * bounds. Rectangles returned by other getters such as {@link
+             * Item#handleBounds} don't have it.
              *
              * @bean
              * @type Boolean
@@ -923,14 +948,20 @@ new function() {
              * path.bounds.selected = true;
              */
             isSelected: function() {
-                return !!(this._owner._selection & /*#=*/ItemSelection.BOUNDS);
+                return !!(this._owner._selection & this._getSelection());
             },
 
             setSelected: function(selected) {
                 var owner = this._owner;
                 if (owner._changeSelection) {
-                    owner._changeSelection(/*#=*/ItemSelection.BOUNDS, selected);
+                    owner._changeSelection(this._getSelection(), selected);
                 }
+            },
+
+            _getSelection: function() {
+                return this._setter === 'setStrokeBounds'
+                        ? /*#=*/ItemSelection.STROKE_BOUNDS
+                        : /*#=*/ItemSelection.BOUNDS;
             }
         })
     );

@@ -526,24 +526,54 @@ var View = Base.extend(Emitter, /** @lends View# */{
         return pixels;
     },
 
-    getTextWidth: function(font, lines, letterSpacing) {
+    getTextWidth: function(font, lines, letterSpacing, direction) {
         var ctx = this._context || CanvasProvider.getContext(1, 1),
             width = 0;
         if (ctx) {
             var prevFont = ctx.font,
-                prevLetterSpacing = ctx.letterSpacing;
+                prevLetterSpacing = ctx.letterSpacing,
+                prevDirection = ctx.direction,
+                // Shaping can differ by direction, as with mirrored brackets:
+                textDirection = direction || 'ltr';
             ctx.font = font;
             ctx.letterSpacing = letterSpacing;
-            // Measure the real width of the text. Unfortunately, there is no
-            // sane way to measure text height with canvas.
+            if (prevDirection !== textDirection)
+                ctx.direction = textDirection;
+            // Measure the real width of the text:
             for (var i = 0, l = lines.length; i < l; i++)
                 width = Math.max(width, ctx.measureText(lines[i]).width);
             ctx.font = prevFont;
             ctx.letterSpacing = prevLetterSpacing;
+            if (prevDirection !== textDirection)
+                ctx.direction = prevDirection;
             if (ctx !== this._context)
                 CanvasProvider.release(ctx);
         }
         return width;
+    },
+
+    getFontMetrics: function(font) {
+        var ctx = this._context || CanvasProvider.getContext(1, 1),
+            metrics = null;
+        if (ctx) {
+            var prevFont = ctx.font;
+            ctx.font = font;
+            // Browsers tell the font's own ascent and descent, node-canvas
+            // those of its em box:
+            var measured = ctx.measureText('H'),
+                ascent = measured.fontBoundingBoxAscent,
+                descent = measured.fontBoundingBoxDescent;
+            if (ascent === undefined) {
+                ascent = measured.emHeightAscent;
+                descent = measured.emHeightDescent;
+            }
+            if (ascent !== undefined)
+                metrics = { ascent: ascent, descent: descent };
+            ctx.font = prevFont;
+            if (ctx !== this._context)
+                CanvasProvider.release(ctx);
+        }
+        return metrics;
     }
 }, Base.each(['rotate', 'scale', 'shear', 'skew'], function(key) {
     var rotate = key === 'rotate';
@@ -1274,26 +1304,16 @@ new function() { // Injection scope for mouse and key event handling
 
     if (window) {
         // Touch handling inspired by Hammer.js
-        var navigator = window.navigator,
-            mousedown, mousemove, mouseup;
-        if (navigator.pointerEnabled || navigator.msPointerEnabled) {
-            // HTML5 / MS pointer events
-            mousedown = 'pointerdown MSPointerDown';
-            mousemove = 'pointermove MSPointerMove';
-            mouseup = 'pointerup pointercancel MSPointerUp MSPointerCancel';
-        } else {
-            mousedown = 'touchstart';
-            mousemove = 'touchmove';
+        var mousedown = 'touchstart',
+            mousemove = 'touchmove',
             mouseup = 'touchend touchcancel';
-            // Do not add mouse events on mobile and tablet devices
-            if (!('ontouchstart' in window && navigator.userAgent.match(
-                    /mobile|tablet|ip(ad|hone|od)|android|silk/i))) {
-                // For non pointer events browsers and mixed browsers, like
-                // chrome on Windows8 touch laptop.
-                mousedown += ' mousedown';
-                mousemove += ' mousemove';
-                mouseup += ' mouseup';
-            }
+        // Do not add mouse events on mobile and tablet devices
+        if (!('ontouchstart' in window && window.navigator.userAgent.match(
+                /mobile|tablet|ip(ad|hone|od)|android|silk/i))) {
+            // For mixed browsers, like chrome on Windows8 touch laptop.
+            mousedown += ' mousedown';
+            mousemove += ' mousemove';
+            mouseup += ' mouseup';
         }
 
         var docEvents = {
@@ -1395,7 +1415,6 @@ new function() { // Injection scope for mouse and key event handling
         },
         // Various variables required by #_handleMouseEvent()
         wasInView = false,
-        overView,
         downPoint,
         lastPoint,
         downItem,
@@ -1473,11 +1492,6 @@ new function() { // Injection scope for mouse and key event handling
                     point, prevPoint));
     }
 
-    /**
-     * Lookup defining which native events are required by which item events.
-     * Required by code that is counting the amount of required natives events.
-     * The mapping is native -> virtual.
-     */
     // Stands in for the DOM event in #dispatchMouseEvent() and
     // #dispatchKeyEvent(), with what the handling reads from it. Hosts can
     // pass the state of the modifier keys, see Key.modifiers:
@@ -1500,6 +1514,11 @@ new function() { // Injection scope for mouse and key event handling
         };
     }
 
+    /**
+     * Lookup defining which native events are required by which item events.
+     * Required by code that is counting the amount of required natives events.
+     * The mapping is native -> virtual.
+     */
     var itemEventsMap = {
         // mouseup too, as the press needs the item for needsUp():
         mousedown: {
@@ -1572,7 +1591,9 @@ new function() { // Injection scope for mouse and key event handling
          *
          * @option [options.character] {String} the character that the key
          *     produces. By default, keydown takes the key itself if it is a
-         *     single character, and keyup the character of its keydown
+         *     single character, the space, carriage return and tab characters
+         *     for 'space', 'enter' and 'tab', and keyup the character of its
+         *     keydown
          * @option [options.modifiers] {Object} the state of the modifier keys,
          *     see {@link Key#modifiers}
          * @option [options.time=Date.now() / 1000] {Number} the time of the
@@ -1687,7 +1708,6 @@ new function() { // Injection scope for mouse and key event handling
             if (wasInView ^ inView) {
                 emitMouseEvent(this, null, inView ? 'mouseenter' : 'mouseleave',
                         event, point);
-                overView = inView ? this : null;
                 handle = true; // To include the leaving move.
             }
             // Now handle the mousemove / mousedrag event.
@@ -1827,7 +1847,7 @@ new function() { // Injection scope for mouse and key event handling
              */
             _resetState: function() {
                 dragging = mouseDown = called = wasInView = false;
-                prevFocus = tempFocus = overView = downPoint = lastPoint =
+                prevFocus = tempFocus = downPoint = lastPoint =
                     downItem = overItem = dragItem = clickItem = clickTime =
                     dblClick = null;
             }

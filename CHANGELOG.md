@@ -1,9 +1,119 @@
 # Change Log
 
-## Unreleased
+## `0.16.0`
 
 ### Added
 
+- Add the `processNode` option to `#exportSVG()` and the `processItem` option
+  to `#importSVG()`: callbacks that receive `{ item, node }` for each exported
+  item with its SVG node and each imported SVG element with its item, and can
+  return a replacement, e.g. to keep the SVG `class` attribute in `Item#data`
+  (#1843).
+- Let `Rectangle#scale()` take a center point to scale from, as
+  `Item#scale()` does, and normalize rectangles scaled by negative amounts
+  (#1352).
+- Add `Segment#name` and `Segment#data`, stored in JSON but not in SVG. Named
+  segments can be accessed by name through `Path#segments`, as named items
+  through `Item#children` (#1459).
+- Add `Style#paintOrder` and `Item#paintOrder`: `'stroke'` paints the stroke
+  before the fill of paths, shapes and text, as in SVG's `paint-order`, which
+  is exported and imported (#1731).
+- Lay out right-to-left text in the order it reads: the pieces of the lines of
+  paragraphs whose `direction` is `'rtl'` are placed, hit and exported from the
+  right, path text runs from the path's end towards its start, and canvas
+  measures and draws text in its paragraph's direction (#2389).
+- Export layers to SVG with a `data-paper-layer` attribute, and import the
+  groups that carry it as `Layer` items again, inside the imported group
+  (#483).
+- Add `SymbolItem#embed()`, which replaces a symbol item with a copy of its
+  definition's item, transformed by the symbol item's matrix and combined with
+  its opacity, visibility, blend mode and other attributes (#953).
+- `Project#currentTextStyle` in hosted projects: the style new text items take
+  in place of `Project#currentStyle` when the host sets one, for hosts whose
+  new text has defaults of its own, such as a black fill without a stroke.
+- Add `Point#values`, `Size#values` and `Rectangle#values`, which give their
+  numbers as an array, as `Matrix#values` does.
+
+### Changed
+
+- Apply the `data-*` attributes of imported SVG elements to `Item#data` before
+  calling the `processItem` callback of `#importSVG()`, so that it can extend
+  the data, instead of after it, which replaced the data that it stored. Items
+  that the callback returns as replacements no longer receive the data.
+
+### Deprecated
+
+- The undocumented `onExport(item, node, options)` and
+  `onImport(node, item, options)` options of `#exportSVG()` and
+  `#importSVG()`, replaced by `processNode` and `processItem`.
+
+### Fixed
+
+- Only call the import callback of `#importSVG()` for SVG elements, not also
+  for the document of SVG strings, which received the item of its root element
+  a second time.
+- Leave out the item itself and its ancestors when inserting children, which
+  created a cycle in the scene graph and overflowed the stack, e.g. in
+  `new Group({ children: [new Layer()] })`, and return `null` from
+  `Item#insertChildren()` when none of the items can be inserted (#2406).
+- Keep the text path of hosted `PathText` and `AreaText` items when the host
+  changes them: `Project#invalidate()` loads its new geometry into the path
+  that scripts hold, which it replaced before.
+- Hit-test the strokes of shapes as those of their paths, which `Shape` only
+  approximated for ellipses and rounded corners, and for non-scaling strokes
+  under non-uniform matrices (#2334).
+
+## `0.15.0`
+
+### Added
+
+- Load text items from the host of a hosted project, see `Project#host`, with
+  their stories, and the paths and settings of path and area text, and let
+  hosts lay them out as their documents do, through `host.layOut()`, given
+  their JSON as the script holds them, also before the host has its changes,
+  or `null` for text the script didn't change, which the host has as it is.
+- Add text ranges: `TextRange`, a part of a text whose style properties read
+  what its letters and paragraphs share and set them, from
+  `TextItem#range(start, end)`, `#runs`, `#paragraphs`, `#words`, `#letters`
+  and `#lines`, which ranges have too, and `#replace(content, start, end)`, and
+  `TextStory`, a text's content, runs and paragraphs, as `TextItem#story`.
+- Add text linking: `TextItem#link()`, `#unlink()`, `#isLinked()`,
+  `#nextTextItem`, `#previousTextItem` and `#visibleRange`, by which a story
+  flows through several text items, which `TextStory#textItems` lists.
+- Add `PathText`, text along a path between `startOffset` and `endOffset`, each
+  letter turned to the path, which it takes as `TextItem#textPath`.
+- Add `AreaText`, text inside any path as its `textPath`, holes too, in
+  columns and rows, with lines breaking between words and at soft hyphens,
+  `verticalAlign`, `fitHeight()`, and `lineWrap`, a paragraph property that
+  balances the lines.
+- Add `Item#textWrap`, by which items push aside the text of the area texts
+  below them in their layer, or let it flow inside them.
+- Export area text, text on paths and text with mixed styles to SVG: point text
+  keeps a `<tspan>` per line, with one per run where styles are mixed, and area
+  text and text on paths are placed piece by piece, as they are laid out.
+- Add character style properties: `fontStyle`, `lineHeight`, `letterKerning`,
+  `letterScaling`, `letterRotation`, `baselineShift`, `baselinePosition`,
+  `capitals`, `underline` and `strikethrough`, and `fontVariations` and
+  `features` for hosts.
+- Add paragraph style properties: `justifyLast`, `startIndent`, `endIndent`,
+  `firstLineIndent`, `spaceBefore`, `spaceAfter` and `direction`, the
+  justifications `'start'`, `'end'` and `'justify'`, and `justifySpacing`,
+  `hyphenation`, `composer` and `tabs` for hosts.
+- Let `Item#strokeBounds` be selected and set, as `Item#bounds` can:
+  `item.strokeBounds.selected` draws the stroke bounds and their handles,
+  independently of `item.bounds.selected`, and setting them scales the item so
+  its stroke bounds match, also where its stroke's extent changes with its
+  proportions, as with miters (#1030).
+- Import the `data-*` attributes of SVG elements into `item.data`, with their
+  names camelized as in `dataset`, next to `data-paper-data` (#1227).
+- Export shadows to SVG as SVG 1.1 filters, which both browsers and editors
+  such as Illustrator render, except for items without width or height, and
+  import them back, along with CSS `drop-shadow()` (#1003).
+- Import SVG masks as clip masks, which is exact for masks of solid white
+  shapes, or of opaque shapes with `mask-type="alpha"`, and warns that other
+  masks are approximated (#1916).
+- Add `Group#ungroup()`, which replaces a group with its children, applying its
+  matrix to them, and let `Item#replaceWith()` take several items (#1026).
 - Add `settings.segmentSize`, the size of the segments when drawing selections,
   next to `settings.handleSize` for their handles, which it defaults to
   (#1899).
@@ -25,9 +135,34 @@
   and `options.time` to `View#dispatchMouseEvent()` and `#dispatchKeyEvent()`.
 - Add a setter to `View#bounds`, which fits the view to the given rectangle, as
   `View#fitBounds()` does.
+- Let `PathItem#unite()`, `#intersect()`, `#subtract()` and `#exclude()` take
+  an array of paths, which they combine in one call: unite, intersect and
+  subtract in a balanced tree, exclude in one even-odd pass. Uniting 500 paths
+  takes 0.22 s instead of 2.9 s chained, excluding them 0.45 s instead of
+  minutes (#2094, #2303, #2304).
+- Load hosted text that the host links into one story, which `host.getStory()`
+  gives once for all of its items, whichever of them loads first.
 
 ### Changed
 
+- Lay out text by the ascent and descent of its fonts: the bounds of
+  `PointText` are its lines' line heights, with the leading split around their
+  ascent and descent, instead of 3/4 of the first above its baseline and 1/4 of
+  the last below.
+- Replace `leading` by `lineHeight`, `'auto'` (1.2) or another factor of the
+  font size, or a fixed length; `leading` still sets and reads a fixed line
+  height in pixels. Rename `tracking` to `letterTracking`, which `tracking`
+  still sets and reads.
+- Make `Style#getFontStyle()` return the CSS font style, `'normal'`,
+  `'italic'` or `'oblique'`, instead of the font as canvas takes it, and remove
+  `Style#getTrackingStyle()`.
+- Only go into the children that items show in `Item#getItems()`, and log the
+  changes of children that their parent doesn't show, such as a text's path, as
+  the parent's.
+- Make `Item#intersects()` check whether the items overlap, also when one
+  contains the other, as `Rectangle#intersects()` does, instead of only whether
+  their outlines cross, and use it in `getItems({ overlapping })` for items
+  whose bounds contain the rectangle (#1751).
 - Use `settings.hitTolerance` for the mouse events of items, such as
   `mouseenter` and `click`, which always hit-tested with a tolerance of 0
   (#1971).
@@ -43,9 +178,66 @@
 - Rename the `paper-sourced.js` build to `paper-hosted.js`, and `Project#source`
   to `Project#host`, to match `HostItem` and the host document that backs the
   items.
+- Draw dashes with `setLineDash()`, which every canvas supports, and remove
+  the dash emulation for canvases without it, along with the undocumented
+  `paper.support.nativeDash` (#2350).
+- Trace the results of boolean operations through a planar graph of the
+  operands' curves, which each operation builds within one geometric
+  tolerance: intersections within it merge into one vertex, curves that pass
+  within it of a vertex are cut there, and coincident curves become one edge.
+  Results are correct to within about five times that tolerance, under a
+  thousandth of a unit on a drawing of 1,000 units, and stable under tiny
+  moves of the operands. They can differ from before in where their contours
+  start and how they are divided, but not in their areas. Holes come out
+  oriented opposite to their outlines, and islands like outlines (#2292).
+- `PathItem#resolveCrossings()` returns the filled outline of a path, without
+  the inner loops that its fill rule covers (#2292).
+- Make boolean operations faster than in 0.14.0 on all inputs measured, from
+  about 15% on small operations up to 5.7× on large polygons (#2293, #2296,
+  #2297, #2299, #2300, #2301, #2302, #2305).
+- Draw the CSS blend modes as `'normal'` in old browsers whose canvas doesn't
+  support them, such as Internet Explorer and the old Edge, instead of
+  emulating them pixel by pixel. Paper.js's own modes, such as `'add'`, are
+  still emulated (#2350).
+- Remove the undocumented statics `Curve.getBounds(values)`, a leftover of
+  old intersection code, and `Curve.getCurveLineIntersections()`, which
+  nothing in the library calls.
+- Drop the code for browsers without current DOM APIs, which only old IE, Edge
+  and WebKit needed: MS pointer events, `srcElement`, `toElement`,
+  `keyIdentifier`, `backingStorePixelRatio`, and the exception of
+  `getBoundingClientRect()` for nodes outside the DOM (#2350).
 
 ### Fixed
 
+- Hit-test strokes with `'miter'` and `'bevel'` joins next to smooth segments,
+  which are joined round, as the stroke bounds already treat them (#2342).
+- Update `Item#strokeBounds` after changing the stroke of items without a
+  parent, such as shapes, texts, symbol items and groups, which kept the old
+  stroke bounds (#2343).
+- Fix `Path#handleBounds` of empty paths, which were infinite: they are an
+  empty rectangle, as their `bounds` (#2345).
+- Import the paragraphs of text items after their content, also from JSON that
+  lists them first, as JSON written by other tools may.
+- Keep gradients in the runs of text items through `#exportJSON()` and
+  `#importJSON()`, and round their style values and those of their paragraphs
+  to the `precision` of the export (#2348).
+- Keep what scripts write to hosted items before they load, such as their
+  `pivot` or an area text's `columns`, which loading replaced.
+- Fix the stroke bounds of non-scaling strokes under non-uniform matrices,
+  whose miters, bevels and square caps followed the untransformed angles.
+- Fix `Item#strokeBounds` after scaling items that apply their matrix, such
+  as paths and groups, when they were read before: the cached stroke bounds
+  were scaled along, including the width of the stroke, which doesn't scale.
+- Fix SVG export of `opacity` and `blendMode`, which aren't inherited, so
+  children with the same values as their group lost them, and the defaults
+  were written where the group differed.
+- Fix the shadows of items that are both filled and stroked, which only cast
+  the shadow of their fill, partly covered by the stroke (#892).
+- Fix the shadows of text items, which only text with both a fill and a
+  stroke drew (#2347).
+- Fix the points at offsets of `PathFlattener` on straight curves, such as
+  lines without handles, whose curve-time doesn't follow their length, which
+  placed them off everywhere but at the ends.
 - Fix SVG import of `<use>` elements, which now pass their styles and those of
   their parents on to the referenced element, as in SVG, instead of the styles
   of the place where it is defined, and skip circular references (#2090).
@@ -96,7 +288,32 @@
 - Handle the mouse events of `View#dispatchMouseEvent()` also outside the
   view's bounds, since the host decides which events belong to its drawing
   surface.
-
+- Fix boolean operations on paths that touch or overlap along their edges,
+  run close to each other, or cross near their vertices, which lost or added
+  parts of their results (#1285, #1362, #1867, #1917, #1943, #1961, #2002,
+  #2036, #2096, #2099).
+- Fix `PathItem#resolveCrossings()` on paths with both overlaps and crossings,
+  which lost parts of their outlines (#2290).
+- Fix `Curve.getTimeOf()` at coordinates beyond about 2e8, where it didn't
+  recognize points on the curve (#2291).
+- Hit-test non-scaling strokes under non-uniform matrices where they're drawn,
+  also next to corners, joins and caps, and with skewed or rotated matrices
+  (#2334).
+- Fix `Curve#strokeBounds` of curves without a path, which threw: without a
+  path, there is no stroke, so they are the curve's bounds (#2344).
+- Give `View#dispatchKeyEvent()` the characters of space, enter and tab, as the
+  DOM's key events have them, instead of empty ones (#2346).
+- Fix `paper.support.nativeBlendModes`, which listed the blend modes canvas
+  accepted as `170` instead of `true`, and only knew the CSS blend modes where
+  a canvas was available when Paper.js loaded. It lists the canvas composite
+  modes and the CSS blend modes as native, and Paper.js's own modes as not,
+  without testing canvas (#2349).
+- Hit-test strokes at segments where the curves meet in the same direction,
+  such as where a line runs into a curve, whatever the join, also across
+  curves without length, as in rectangles rounded to half their height.
+- Calculate `Curve#getTimesWithTangent()`, `#length` and `Curve.getPeaks()`
+  precisely also far from the origin, from the curve's polynomial
+  coefficients, which take the differences of the points first.
 
 ## `0.14.0`
 

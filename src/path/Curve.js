@@ -471,7 +471,7 @@ var Curve = Base.extend(/** @lends Curve# */{
      *     within the valid range, {code null} otherwise.
      * @see #divideAt(offset)
      */
-    divideAtTime: function(time, _setHandles) {
+    divideAtTime: function(time) {
         // Only divide if not at the beginning or end.
         var tMin = /*#=*/Numerical.CURVETIME_EPSILON,
             tMax = 1 - tMin,
@@ -480,7 +480,7 @@ var Curve = Base.extend(/** @lends Curve# */{
             var parts = Curve.subdivide(this.getValues(), time),
                 left = parts[0],
                 right = parts[1],
-                setHandles = _setHandles || this.hasHandles(),
+                setHandles = this.hasHandles(),
                 seg1 = this._segment1,
                 seg2 = this._segment2,
                 path = this._path;
@@ -759,21 +759,10 @@ statics: /** @lends Curve */{
                 + y3 * (x2 + x0 / 3) - x3 * (y2 + y0 / 3)) / 20;
     },
 
-    getBounds: function(v) {
-        var min = v.slice(0, 2), // Start with values of point1
-            max = min.slice(), // clone
-            roots = [0, 0];
-        for (var i = 0; i < 2; i++)
-            Curve._addBounds(v[i], v[i + 2], v[i + 4], v[i + 6],
-                    i, 0, min, max, roots);
-        return new Rectangle(min[0], min[1], max[0] - min[0], max[1] - min[1]);
-    },
-
     /**
-     * Private helper for both Curve.getBounds() and Path.getBounds(), which
-     * finds the 0-crossings of the derivative of a bezier curve polynomial, to
-     * determine potential extremas when finding the bounds of a curve.
-     * NOTE: padding is only used for Path.getBounds().
+     * Private helper for Path.getBounds(), which finds the 0-crossings of the
+     * derivative of a bezier curve polynomial, to determine potential extremas
+     * when finding the bounds of a curve.
      */
     _addBounds: function(v0, v1, v2, v3, coord, padding, min, max, roots) {
         // Code ported and further optimised from:
@@ -787,7 +776,6 @@ statics: /** @lends Curve */{
                 max[coord] = right;
         }
 
-        padding /= 2; // strokePadding is in width, not radius
         var minPad = min[coord] + padding,
             maxPad = max[coord] - padding;
         // Perform a rough bounds checking first: The curve can only extend the
@@ -834,11 +822,6 @@ statics: /** @lends Curve */{
     }
 }}, Base.each(
     ['getBounds', 'getStrokeBounds'],
-    // NOTE: Although Curve.getBounds() exists, we are using Path.getBounds() to
-    // determine the bounds of Curve objects with defined segment1 and segment2
-    // values Curve.getBounds() can be used directly on curve arrays, without
-    // the need to create a Curve object first, as required by the code that
-    // finds path interesections.
     function(name) {
         this[name] = function() {
             if (!this._bounds)
@@ -846,9 +829,11 @@ statics: /** @lends Curve */{
             var bounds = this._bounds[name];
             if (!bounds) {
                 // Calculate the curve bounds by passing a segment list for the
-                // curve to the static Path.get*Boudns methods.
-                bounds = this._bounds[name] = Path[name](
-                        [this._segment1, this._segment2], false, this._path);
+                // curve to the static Path.get*Bounds methods. Without a path,
+                // there is no stroke, so the stroke bounds are the bounds.
+                var path = this._path;
+                bounds = this._bounds[name] = Path[path ? name : 'getBounds'](
+                        [this._segment1, this._segment2], false, path);
             }
             return bounds.clone();
         };
@@ -962,7 +947,9 @@ statics: /** @lends Curve */{
     /**
      * {@grouptitle Curve Tests}
      *
-     * Checks if this curve has any curve handles set.
+     * Checks if this curve has any curve handles set. Handles of which both
+     * coordinates are 0 within a tolerance of 1e-12 count as not set, see
+     * {@link Point#isZero()}.
      *
      * @return {Boolean} {@true if the curve has handles set}
      * @see Curve#handle1
@@ -1357,19 +1344,10 @@ new function() { // Injection scope for various curve evaluation methods
 new function() { // Scope for methods that require private functions
 
     function getLengthIntegrand(v) {
-        // Calculate the coefficients of a Bezier derivative.
-        var x0 = v[0], y0 = v[1],
-            x1 = v[2], y1 = v[3],
-            x2 = v[4], y2 = v[5],
-            x3 = v[6], y3 = v[7],
-
-            ax = 9 * (x1 - x2) + 3 * (x3 - x0),
-            bx = 6 * (x0 + x2) - 12 * x1,
-            cx = 3 * (x1 - x0),
-
-            ay = 9 * (y1 - y2) + 3 * (y3 - y0),
-            by = 6 * (y0 + y2) - 12 * y1,
-            cy = 3 * (y1 - y0);
+        // The coefficients of the derivative of the curve's polynomial:
+        var c = getCoefficients(v),
+            ax = 3 * c[0], bx = 2 * c[1], cx = c[2],
+            ay = 3 * c[3], by = 2 * c[4], cy = c[5];
 
         return function(t) {
             // Calculate quadratic equations of derivatives for x and y
@@ -1660,11 +1638,10 @@ new function() { // Scope for methods that require private functions
                 x3 = v[6], y3 = v[7],
                 px = point.x,
                 py = point.y,
-                epsilon = tolerance || Math.max(
-                    /*#=*/Numerical.GEOMETRIC_EPSILON,
-                    Numerical.getEpsilon(Math.max(
+                epsilon = tolerance || Numerical.getEpsilon(Math.max(
                         abs(x0), abs(y0), abs(v[2]), abs(v[3]),
-                        abs(v[4]), abs(v[5]), abs(x3), abs(y3))));
+                        abs(v[4]), abs(v[5]), abs(x3), abs(y3)),
+                        /*#=*/Numerical.GEOMETRIC_EPSILON);
 
             function isClose(x, y) {
                 var dx = x - px,
@@ -1788,16 +1765,9 @@ new function() { // Scope for methods that require private functions
          * @return {Number[]} the roots of all found peaks
          */
         getPeaks: function(v) {
-            var x0 = v[0], y0 = v[1],
-                x1 = v[2], y1 = v[3],
-                x2 = v[4], y2 = v[5],
-                x3 = v[6], y3 = v[7],
-                ax =     -x0 + 3 * x1 - 3 * x2 + x3,
-                bx =  3 * x0 - 6 * x1 + 3 * x2,
-                cx = -3 * x0 + 3 * x1,
-                ay =     -y0 + 3 * y1 - 3 * y2 + y3,
-                by =  3 * y0 - 6 * y1 + 3 * y2,
-                cy = -3 * y0 + 3 * y1,
+            var c = getCoefficients(v),
+                ax = c[0], bx = c[1], cx = c[2],
+                ay = c[3], by = c[4], cy = c[5],
                 tMin = /*#=*/Numerical.CURVETIME_EPSILON,
                 tMax = 1 - tMin,
                 roots = [];
@@ -1809,6 +1779,52 @@ new function() { // Scope for methods that require private functions
                     // Exclude 0 and 1 as we don't count them as peaks.
                     roots, tMin, tMax);
             return roots.sort();
+        },
+
+        /**
+         * Internal method to calculates the curve-time parameters where the
+         * curve is tangential to provided tangent.
+         * Tangents at the start or end are included.
+         *
+         * @param {Number[]} v curve values
+         * @param {Point} tangent the tangent to which the curve must be
+         * tangential
+         * @return {Number[]} at most two curve-time parameters, where the curve
+         * is tangential to the given tangent
+         */
+        getTimesWithTangent: function(v, tangent) {
+            // Algorithm adapted from:
+            // https://stackoverflow.com/a/34837312/7615922
+            // The coefficients of the derivative of the curve's polynomial:
+            var c = getCoefficients(v),
+                ax = 3 * c[0], bx = 2 * c[1], cx = c[2],
+                ay = 3 * c[3], by = 2 * c[4], cy = c[5],
+                normalized = tangent.normalize(),
+                tx = normalized.x,
+                ty = normalized.y,
+                den = 2 * ax * ty - 2 * ay * tx,
+                times = [];
+            if (Math.abs(den) < Numerical.CURVETIME_EPSILON) {
+                var num = cx * ty - cy * tx,
+                    den = bx * ty - by * tx;
+                if (den != 0) {
+                    var t = -num / den;
+                    if (t >= 0 && t <= 1) times.push(t);
+                }
+            } else {
+                var delta = (bx * bx - 4 * ax * cx) * ty * ty +
+                    (-2 * bx * by + 4 * ay * cx + 4 * ax * cy) * tx * ty +
+                    (by * by - 4 * ay * cy) * tx * tx,
+                    k = bx * ty - by * tx;
+                if (delta >= 0 && den != 0) {
+                    var d = Math.sqrt(delta),
+                        t0 = -(k + d) / den,
+                        t1 = (-k + d) / den;
+                    if (t0 >= 0 && t0 <= 1) times.push(t0);
+                    if (t1 >= 0 && t1 <= 1) times.push(t1);
+                }
+            }
+            return times;
         }
     }};
 },
@@ -2618,56 +2634,6 @@ new function() { // Scope for bezier intersection using fat-line clipping
         return pairs;
     }
 
-    /**
-     * Internal method to calculates the curve-time parameters where the curve
-     * is tangential to provided tangent.
-     * Tangents at the start or end are included.
-     *
-     * @param {Number[]} v curve values
-     * @param {Point} tangent the tangent to which the curve must be tangential
-     * @return {Number[]} at most two curve-time parameters, where the curve is
-     * tangential to the given tangent
-     */
-    function getTimesWithTangent(v, tangent) {
-        // Algorithm adapted from: https://stackoverflow.com/a/34837312/7615922
-        var x0 = v[0], y0 = v[1],
-            x1 = v[2], y1 = v[3],
-            x2 = v[4], y2 = v[5],
-            x3 = v[6], y3 = v[7],
-            normalized = tangent.normalize(),
-            tx = normalized.x,
-            ty = normalized.y,
-            ax = 3 * x3 - 9 * x2 + 9 * x1 - 3 * x0,
-            ay = 3 * y3 - 9 * y2 + 9 * y1 - 3 * y0,
-            bx = 6 * x2 - 12 * x1 + 6 * x0,
-            by = 6 * y2 - 12 * y1 + 6 * y0,
-            cx = 3 * x1 - 3 * x0,
-            cy = 3 * y1 - 3 * y0,
-            den = 2 * ax * ty - 2 * ay * tx,
-            times = [];
-        if (Math.abs(den) < Numerical.CURVETIME_EPSILON) {
-            var num = cx * ty - cy * tx,
-                den = bx * ty - by * tx;
-            if (den != 0) {
-                var t = -num / den;
-                if (t >= 0 && t <= 1) times.push(t);
-            }
-        } else {
-            var delta = (bx * bx - 4 * ax * cx) * ty * ty +
-                (-2 * bx * by + 4 * ay * cx + 4 * ax * cy) * tx * ty +
-                (by * by - 4 * ay * cy) * tx * tx,
-                k = bx * ty - by * tx;
-            if (delta >= 0 && den != 0) {
-                var d = Math.sqrt(delta),
-                    t0 = -(k + d) / den,
-                    t1 = (-k + d) / den;
-                if (t0 >= 0 && t0 <= 1) times.push(t0);
-                if (t1 >= 0 && t1 <= 1) times.push(t1);
-            }
-        }
-        return times;
-    }
-
     return /** @lends Curve# */{
         /**
          * Returns all intersections between two {@link Curve} objects as an
@@ -2688,10 +2654,7 @@ new function() { // Scope for bezier intersection using fat-line clipping
 
         statics: /** @lends Curve */{
             getOverlaps: getOverlaps,
-            // Exposed for use in boolean offsetting
-            getIntersections: getIntersections,
-            getCurveLineIntersections: getCurveLineIntersections,
-            getTimesWithTangent: getTimesWithTangent
+            getIntersections: getIntersections
         }
     };
 });
